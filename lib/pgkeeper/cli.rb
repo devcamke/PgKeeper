@@ -51,7 +51,11 @@ module PgKeeper
     def list
       config = load_config
       dir = config.local_path
-      unless dir && File.directory?(dir)
+      if dir.nil?
+        say "No local storage target configured; `list` currently reads local storage only.", :yellow
+        return
+      end
+      unless File.directory?(dir)
         say "No local storage directory yet: #{dir}", :yellow
         return
       end
@@ -111,35 +115,55 @@ module PgKeeper
       end
 
       def print_report(report)
-        report.results.each do |result|
-          if result.success?
-            arts = result.artifacts.map { |a| "#{a[:kind]}=#{human_size(a[:size_bytes])}" }.join(" ")
-            say "✓ #{result.database} (#{result.duration_seconds}s) #{arts}", :green
+        report.results.each { |result| print_result(result) }
+        say ""
+        clean = report.failed.empty? && report.partial.empty?
+        say "#{report.succeeded.length} succeeded, #{report.partial.length} partial, " \
+            "#{report.failed.length} failed", clean ? :green : :red
+      end
+
+      def print_result(result)
+        if result.failure?
+          say "✗ #{result.database}: #{result.error&.message}", :red
+          return
+        end
+
+        glyph, color = result.success? ? ["✓", :green] : ["!", :yellow]
+        say "#{glyph} #{result.database} (#{result.duration_seconds}s)", color
+        result.artifacts.each { |a| print_artifact(a) }
+      end
+
+      def print_artifact(artifact)
+        pipeline = [artifact[:compression], artifact[:encryption]].reject { |x| x == "none" }.join("+")
+        pipeline = pipeline.empty? ? "" : " [#{pipeline}]"
+        say "    #{artifact[:kind]}: #{human_size(artifact[:size_bytes])}#{pipeline}"
+        artifact[:destinations].each do |dest|
+          if dest.ok?
+            say "      → #{dest.name}", :green
           else
-            say "✗ #{result.database}: #{result.error&.message}", :red
+            say "      → #{dest.name}: #{dest.error}", :red
           end
         end
-        say ""
-        say "#{report.succeeded.length} succeeded, #{report.failed.length} failed", report.failed.empty? ? :green : :red
       end
 
       def print_backups(dir)
-        manifests = Dir[File.join(dir, "*#{Manifest::SUFFIX}")]
+        manifests = Dir[File.join(dir, "**", "*#{Manifest::SUFFIX}")]
         if manifests.empty?
           say "No backups found in #{dir}", :yellow
           return
         end
-        manifests.each do |mpath|
-          m = Manifest.load(mpath)
-          artifact = File.join(dir, m.artifact.to_s)
-          missing = File.exist?(artifact) ? "" : "  (artifact missing!)"
-          line = format("%<name>-44s %<size>10s  %<when>s%<missing>s",
-                        name: m.artifact,
-                        size: human_size(m.size_bytes),
-                        when: m.data["finished_at"] || m.data["started_at"],
-                        missing: missing)
-          say line.rstrip
-        end
+        manifests.each { |mpath| say backup_row(mpath).rstrip }
+      end
+
+      def backup_row(manifest_path)
+        m = Manifest.load(manifest_path)
+        artifact = File.join(File.dirname(manifest_path), m.artifact.to_s)
+        missing = File.exist?(artifact) ? "" : "  (artifact missing!)"
+        pipeline = [m.data["compression"], m.data["encryption"]].compact.reject { |x| x == "none" }.join("+")
+        format("%<name>-48s %<size>10s  %<pipe>-10s %<when>s%<missing>s",
+               name: m.artifact, size: human_size(m.size_bytes),
+               pipe: pipeline.empty? ? "-" : pipeline,
+               when: m.data["finished_at"] || m.data["started_at"], missing: missing)
       end
 
       def status_glyph(status)

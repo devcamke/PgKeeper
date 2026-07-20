@@ -36,6 +36,16 @@ Metrics/CyclomaticComplexity:
   Max: 10
 Metrics/PerceivedComplexity:
   Max: 10
+# Keyword arguments are self-documenting at the call site, so they don't carry
+# the readability cost that positional lists do; only count positional params.
+Metrics/ParameterLists:
+  CountKeywordArgs: false
+
+# `healthcheck` is a command that returns true or raises — not a boolean query,
+# so it doesn't read naturally with a trailing question mark.
+Naming/PredicateMethod:
+  AllowedMethods:
+    - healthcheck
 
 Style/Documentation:
   Enabled: false

@@ -8,25 +8,41 @@ SharePoint/OneDrive, S3-compatible), enforces retention policies, verifies that 
 are actually restorable, reports status via email, and includes an optional web dashboard
 (`pgkeeper web`) for monitoring backup health and triggering runs.
 
-**Status:** v0.1 (Phases 0–2) is implemented and tested — local dumps with checksummed
-manifests, cluster globals, run locking, and an environment `doctor`. See
-[PLAN.md](PLAN.md) for the full multi-phase build plan and roadmap.
+**Status:** v0.2 (Phases 0–4) is implemented and tested — dumps are compressed,
+optionally encrypted, and fanned out to multiple local and cloud destinations, each with
+a checksummed manifest. See [PLAN.md](PLAN.md) for the full multi-phase build plan and
+roadmap.
 
-## What works today (v0.1)
+## What works today (v0.2)
 
 - **`pgkeeper doctor`** — checks that `pg_dump`/`pg_restore`/`pg_dumpall`/`psql` are on
-  PATH, validates your config, confirms each database is reachable, and warns on
-  `pg_dump`-vs-server version drift.
+  PATH, validates your config, health-checks every storage destination, confirms each
+  database is reachable, and warns on `pg_dump`-vs-server version drift.
 - **`pgkeeper validate`** — loads the config and reports every schema problem at once.
-- **`pgkeeper backup`** — dumps each configured database (custom/plain/directory format),
-  optionally captures cluster globals (`pg_dumpall --globals-only`), writes a per-backup
-  manifest with a SHA-256 checksum, and lands everything in local storage. Runs are
-  guarded by an flock so overlapping cron jobs can't collide, and each dump is written to
-  a staging dir and atomically renamed into place — a crash never leaves a half-written
-  file that looks complete.
-- **`pgkeeper list`** — lists the backups present in local storage with size and age.
+- **`pgkeeper backup`** — for each database, runs the full pipeline:
 
-Meaningful exit codes throughout: `0` success, `1` partial failure, `2` total failure.
+      pg_dump → package (directory formats) → compress → encrypt → manifest
+              → fan out to every configured destination
+
+  - **Compression:** gzip, zip, or zstd; skipped automatically for already-compressed
+    `custom`/`directory` dumps.
+  - **Encryption at rest:** AES-256-GCM (built in) or GPG, keyed by passphrase or keyfile;
+    tamper-evident, and reversed transparently on restore.
+  - **Storage fan-out:** local filesystem and S3-compatible object storage (AWS S3, MinIO,
+    Backblaze B2, Cloudflare R2, Spaces). Destinations are independent — one being down
+    fails only that destination, and the report shows per-destination status.
+  - Cluster globals (`pg_dumpall --globals-only`), a SHA-256 manifest per artifact,
+    flock-guarded runs, and staging + atomic finalize so a crash never leaves a
+    half-written backup.
+- **`pgkeeper list`** — lists local backups with size, age, and the compression/encryption
+  pipeline applied.
+
+Meaningful exit codes throughout: `0` success, `1` partial (some destinations/databases
+failed), `2` total failure.
+
+Storage adapters share one contract (upload / download / list / delete / healthcheck with
+retry + backoff), so local, S3, and the in-memory test backend are provably
+interchangeable. Cloud SDKs are optional dependencies, lazy-loaded only when used.
 
 ## Stack
 

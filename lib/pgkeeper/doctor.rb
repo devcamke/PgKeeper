@@ -69,20 +69,21 @@ module PgKeeper
     end
 
     def check_databases(config)
-      destination = config.local_path
-      check_destination(destination) if destination
-
+      config.storage.each { |target| check_storage(target) }
       config.databases.each { |db| check_connectivity(db) }
     end
 
-    def check_destination(path)
-      if File.directory?(path)
-        writable = File.writable?(path)
-        add("storage:local", writable ? :ok : :fail,
-            writable ? "#{path} (writable)" : "#{path} (not writable)")
-      else
-        add("storage:local", :warn, "#{path} (does not exist yet; will be created)")
-      end
+    # Probe each configured storage destination. A missing optional cloud SDK is
+    # a warning (the user can install it), not a hard failure of doctor.
+    def check_storage(target)
+      type = target["type"]
+      adapter = Storage.build(target, logger: @logger)
+      adapter.healthcheck
+      add("storage:#{type}", :ok, adapter.name)
+    rescue EnvironmentError => e
+      add("storage:#{type}", :warn, e.message)
+    rescue StorageError, ConfigError => e
+      add("storage:#{type}", :fail, e.message)
     end
 
     def check_connectivity(db)
