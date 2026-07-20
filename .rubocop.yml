@@ -1,0 +1,71 @@
+plugins:
+  - rubocop-minitest
+  - rubocop-rake
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "vendor/**/*"
+    - "tmp/**/*"
+    - "pkg/**/*"
+
+# PgKeeper favors readable, explanatory prose in method and class docs; a few of
+# the orchestration methods are naturally longer than the default cop budgets.
+# Tests are exempt from size metrics — a scenario legitimately runs many
+# assertions and a bit of setup.
+Metrics/MethodLength:
+  Max: 25
+  Exclude:
+    - "test/**/*.rb"
+Metrics/AbcSize:
+  Max: 30
+  Exclude:
+    - "test/**/*.rb"
+Metrics/ClassLength:
+  Max: 250
+Metrics/BlockLength:
+  # Thor keeps command helpers inside a single `no_commands` block by design.
+  AllowedMethods:
+    - no_commands
+  Exclude:
+    - "test/**/*.rb"
+    - "*.gemspec"
+Metrics/CyclomaticComplexity:
+  Max: 10
+Metrics/PerceivedComplexity:
+  Max: 10
+# Keyword arguments are self-documenting at the call site, so they don't carry
+# the readability cost that positional lists do; only count positional params.
+Metrics/ParameterLists:
+  CountKeywordArgs: false
+
+# `healthcheck` is a command that returns true or raises — not a boolean query,
+# so it doesn't read naturally with a trailing question mark.
+Naming/PredicateMethod:
+  AllowedMethods:
+    - healthcheck
+
+Style/Documentation:
+  Enabled: false
+# `!!value` is the clearest way to coerce a config value to a strict boolean.
+Style/DoubleNegation:
+  Enabled: false
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+Style/FrozenStringLiteralComment:
+  Enabled: true
+
+# Endless methods read cleanly for tiny predicates.
+Style/EndlessMethod:
+  Enabled: true
+
+Layout/LineLength:
+  Max: 120
+  AllowedPatterns:
+    - "^\\s*#"
+
+# Tests describe scenarios; long describe/it blocks are expected.
+Minitest/MultipleAssertions:
+  Max: 8

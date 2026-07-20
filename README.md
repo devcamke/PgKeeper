@@ -8,11 +8,93 @@ SharePoint/OneDrive, S3-compatible), enforces retention policies, verifies that 
 are actually restorable, reports status via email, and includes an optional web dashboard
 (`pgkeeper web`) for monitoring backup health and triggering runs.
 
-**Status:** planning. See [PLAN.md](PLAN.md) for the full multi-phase build plan,
-architecture, and milestones.
+**Status:** v0.2 (Phases 0–4) is implemented and tested — dumps are compressed,
+optionally encrypted, and fanned out to multiple local and cloud destinations, each with
+a checksummed manifest. See [PLAN.md](PLAN.md) for the full multi-phase build plan and
+roadmap.
+
+## What works today (v0.2)
+
+- **`pgkeeper doctor`** — checks that `pg_dump`/`pg_restore`/`pg_dumpall`/`psql` are on
+  PATH, validates your config, health-checks every storage destination, confirms each
+  database is reachable, and warns on `pg_dump`-vs-server version drift.
+- **`pgkeeper validate`** — loads the config and reports every schema problem at once.
+- **`pgkeeper backup`** — for each database, runs the full pipeline:
+
+      pg_dump → package (directory formats) → compress → encrypt → manifest
+              → fan out to every configured destination
+
+  - **Compression:** gzip, zip, or zstd; skipped automatically for already-compressed
+    `custom`/`directory` dumps.
+  - **Encryption at rest:** AES-256-GCM (built in) or GPG, keyed by passphrase or keyfile;
+    tamper-evident, and reversed transparently on restore.
+  - **Storage fan-out:** local filesystem and S3-compatible object storage (AWS S3, MinIO,
+    Backblaze B2, Cloudflare R2, Spaces). Destinations are independent — one being down
+    fails only that destination, and the report shows per-destination status.
+  - Cluster globals (`pg_dumpall --globals-only`), a SHA-256 manifest per artifact,
+    flock-guarded runs, and staging + atomic finalize so a crash never leaves a
+    half-written backup.
+- **`pgkeeper list`** — lists local backups with size, age, and the compression/encryption
+  pipeline applied.
+
+Meaningful exit codes throughout: `0` success, `1` partial (some destinations/databases
+failed), `2` total failure.
+
+Storage adapters share one contract (upload / download / list / delete / healthcheck with
+retry + backoff), so local, S3, and the in-memory test backend are provably
+interchangeable. Cloud SDKs are optional dependencies, lazy-loaded only when used.
 
 ## Stack
 
-- Ruby (gem-packaged CLI, `thor`)
-- `pg_dump` / `pg_restore` under the hood
-- Minitest for testing (unit, adapter contract, and Dockerized-Postgres integration tests)
+- Ruby 4 (toolchain pinned with [mise](https://mise.jdx.dev); see `.mise.toml`)
+- Gem-packaged CLI built on `thor`
+- `pg_dump` / `pg_restore` under the hood (never reimplemented)
+- Minitest for testing — unit tests plus Dockerized/live-Postgres integration tests
+
+## Getting started
+
+```sh
+# 1. Provision the pinned Ruby toolchain and install dependencies.
+mise install
+mise exec -- bundle install
+
+# 2. Write a config (copy the example and edit).
+cp config/pgkeeper.example.yml pgkeeper.yml
+export PGKEEPER_APP_PASSWORD=...        # secrets come from the environment
+
+# 3. Check the environment, then take a backup.
+mise exec -- ruby -Ilib bin/pgkeeper doctor  -c pgkeeper.yml
+mise exec -- ruby -Ilib bin/pgkeeper backup  -c pgkeeper.yml
+mise exec -- ruby -Ilib bin/pgkeeper list    -c pgkeeper.yml
+```
+
+Config is a single declarative YAML file with ERB interpolation for secrets, so
+passwords stay in the environment and out of git:
+
+```yaml
+databases:
+  - name: app_production
+    host: db.internal
+    username: backup_user
+    password: <%= ENV["PGKEEPER_APP_PASSWORD"] %>
+    format: custom
+    include_globals: true
+storage:
+  - type: local
+    path: /var/backups/pgkeeper/backups
+```
+
+See [`config/pgkeeper.example.yml`](config/pgkeeper.example.yml) for the full annotated
+schema.
+
+## Development
+
+```sh
+mise exec -- bundle exec rake test        # unit + integration (integration skips w/o PG)
+mise exec -- bundle exec rake test:unit   # fast, hermetic unit tests only
+mise exec -- bundle exec rake lint        # RuboCop
+```
+
+Integration tests run against a live Postgres when the `PGKEEPER_TEST_PG*` environment
+variables point at one (CI supplies a `postgres:16` service container); otherwise they
+skip, keeping the unit suite hermetic.

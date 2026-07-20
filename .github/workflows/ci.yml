@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - name: Verify pinned Ruby (4.0.6)
+        run: |
+          v=$(mise exec -- ruby -e 'print RUBY_VERSION')
+          echo "Ruby version: $v"
+          [ "$v" = "4.0.6" ] || { echo "expected Ruby 4.0.6, got $v"; exit 1; }
+      - name: Install dependencies
+        run: mise exec -- bundle install
+      - name: RuboCop
+        run: mise exec -- bundle exec rake lint
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pgkeeper
+          POSTGRES_PASSWORD: pgkeeper
+          POSTGRES_DB: pgkeeper_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pgkeeper"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Integration tests connect here; the postgresql-client provides pg_dump.
+      PGKEEPER_TEST_PGHOST: localhost
+      PGKEEPER_TEST_PGPORT: "5432"
+      PGKEEPER_TEST_PGUSER: pgkeeper
+      PGKEEPER_TEST_PGPASSWORD: pgkeeper
+      PGKEEPER_TEST_PGDATABASE: pgkeeper_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - name: Verify pinned Ruby (4.0.6)
+        run: |
+          v=$(mise exec -- ruby -e 'print RUBY_VERSION')
+          echo "Ruby version: $v"
+          [ "$v" = "4.0.6" ] || { echo "expected Ruby 4.0.6, got $v"; exit 1; }
+      - name: Install dependencies
+        run: mise exec -- bundle install
+      - name: Run tests
+        run: mise exec -- bundle exec rake test
