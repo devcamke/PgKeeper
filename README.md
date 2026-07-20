@@ -5,7 +5,8 @@ A full-fledged, automated PostgreSQL backup solution in Ruby.
 PgKeeper dumps your databases on a schedule, compresses and optionally encrypts the
 artifacts, stores them locally and/or in the cloud (Google Drive, Dropbox,
 SharePoint/OneDrive, S3-compatible), enforces retention policies, verifies that backups
-are actually restorable, and reports status via email.
+are actually restorable, reports status via email, and includes an optional web dashboard
+(`pgkeeper web`) for monitoring backup health and triggering runs.
 
 **Status:** planning. See [PLAN.md](PLAN.md) for the full multi-phase build plan,
 architecture, and milestones.
