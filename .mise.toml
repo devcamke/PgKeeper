@@ -1,0 +1,7 @@
+# Toolchain pinned with mise (https://mise.jdx.dev).
+#
+#   mise install        # provision the pinned Ruby
+#   mise exec -- bundle install
+#   mise exec -- bundle exec rake test
+[tools]
+ruby = "4.0.6"

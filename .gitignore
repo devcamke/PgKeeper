@@ -1,0 +1,16 @@
+/.bundle/
+/vendor/bundle/
+/pkg/
+/tmp/
+/coverage/
+*.gem
+Gemfile.lock
+
+# Local runtime artifacts / secrets — never commit these.
+/pgkeeper.yml
+/config/pgkeeper.yml
+*.dump
+*.sql
+*.manifest.json
+.pgkeeper.lock
+.pgkeeper-staging-*
