@@ -1,0 +1,59 @@
+# PgKeeper example configuration.
+#
+# Copy to pgkeeper.yml (or config/pgkeeper.yml) and edit. Secrets should come
+# from the environment via ERB interpolation — never commit real passwords.
+#
+#   export PGKEEPER_APP_PASSWORD=...
+#   pgkeeper doctor -c pgkeeper.yml
+#   pgkeeper backup -c pgkeeper.yml
+
+# Where PgKeeper stages work and (by default) keeps local backups.
+workdir: /var/backups/pgkeeper
+
+# Settings applied to every database unless the database overrides them.
+defaults:
+  host: localhost
+  port: 5432
+  username: backup_user
+  format: custom          # custom | plain | directory
+  include_globals: true   # also capture roles/tablespaces via pg_dumpall
+
+databases:
+  - name: app_production
+    database: app_production
+    password: <%= ENV["PGKEEPER_APP_PASSWORD"] %>
+    include_globals: true
+
+  - name: analytics
+    database: analytics
+    format: directory       # enables parallel dump/restore for large DBs
+    exclude_tables:
+      - events_raw           # skip a huge, reproducible table
+    password: <%= ENV["PGKEEPER_ANALYTICS_PASSWORD"] %>
+
+# Compression of the artifact. `custom` dumps are already compressed by
+# pg_dump, so `none` is a sensible default there. (Phase 3.)
+compression: none
+
+# Encryption at rest before anything ships to third-party clouds. (Phase 3.)
+encryption:
+  enabled: false
+
+# Backup destinations. `local` ships in v0.1; cloud backends are additive.
+storage:
+  - type: local
+    path: /var/backups/pgkeeper/backups
+
+# Retention policy, enforced per destination. (Phase 5.)
+retention:
+  keep_daily: 7
+  keep_weekly: 4
+  keep_monthly: 6
+
+# Notifications. (Phase 7.) Failure alerts are strongly recommended.
+notifications:
+  email:
+    to:
+      - ops@example.com
+    on:
+      - failure
