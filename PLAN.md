@@ -3,7 +3,8 @@
 A full-fledged, automated PostgreSQL backup tool written in **Ruby**, tested with **Minitest**.
 It dumps databases on a schedule, compresses/zips the output, stores it locally and/or pushes
 it to cloud storage (Google Drive, Dropbox, SharePoint/OneDrive, S3-compatible), enforces
-retention policies, verifies backups, and reports status via email.
+retention policies, verifies backups, reports status via email, and ships an optional web
+dashboard for monitoring and management.
 
 ---
 
@@ -25,7 +26,7 @@ retention policies, verifies backups, and reports status via email.
                 ┌────────────────────────────────────────────────┐
                 │                  PgKeeper CLI                  │
                 │      (thor: backup / restore / verify /        │
-                │       list / prune / doctor / schedule)        │
+                │    list / prune / doctor / schedule / web)     │
                 └───────────────────┬────────────────────────────┘
                                     │
                         ┌───────────▼───────────┐
@@ -86,6 +87,11 @@ pgkeeper/
 │       │   ├── base.rb
 │       │   ├── email.rb          # mail gem, SMTP
 │       │   └── webhook.rb        # healthchecks.io / Slack (stretch)
+│       ├── history.rb            # SQLite run-history store
+│       ├── web/
+│       │   ├── app.rb            # Sinatra dashboard (optional `pgkeeper web`)
+│       │   ├── auth.rb           # basic-auth / token middleware
+│       │   └── views/            # ERB templates
 │       └── logging.rb            # structured logs
 ├── test/                         # Minitest
 │   ├── test_helper.rb
@@ -110,7 +116,9 @@ pgkeeper/
 | SharePoint     | Faraday against Microsoft Graph          | OAuth2 client-credentials flow |
 | S3 (stretch)   | `aws-sdk-s3`                             | also covers MinIO/Backblaze |
 | Email          | `mail`                                   | plain SMTP, TLS |
-| Testing        | `minitest`, `webmock`, `vcr`, `mocha`    | plus dockerized Postgres for integration |
+| Run history    | `sqlite3`                                | single-file store, feeds `status` + dashboard |
+| Dashboard      | `sinatra` + `puma`, ERB views            | optional `pgkeeper web` subcommand |
+| Testing        | `minitest`, `webmock`, `vcr`, `mocha`, `rack-test` | plus dockerized Postgres for integration |
 | Lint           | `rubocop` + `rubocop-minitest`           | |
 
 ---
@@ -305,7 +313,8 @@ tampered-file detection; refuse-to-overwrite behavior.
   the worst failure mode: cron silently not running at all. An email system can't tell you
   about a run that never happened; a missed ping can.
 - Webhook notifier (generic JSON POST → Slack/Teams/Discord) as a thin second backend.
-- Run summary also written to a local JSONL history file for `pgkeeper status`.
+- Run summary also persisted to a local SQLite run-history store (`history.rb`) — powers
+  `pgkeeper status` now and the web dashboard in Phase 9.
 
 **Tests:** mail rendering (both parts), trigger matrix, SMTP failure doesn't crash the
 backup itself (notification errors are logged, never fatal to the run).
@@ -336,7 +345,46 @@ with one documented command sequence.
 
 ---
 
-## Phase 9 — Packaging, Docker & Docs
+## Phase 9 — Web Dashboard (Monitoring & Management)
+
+**Goal:** a browser view of backup health, plus safe management actions — without making
+the core pipeline depend on an always-running web process.
+
+- Optional `pgkeeper web` subcommand (Sinatra + Puma, ERB views); headless installs never
+  pay for it. Reads the same SQLite run-history store and manifests the CLI uses — no
+  separate data path to drift out of sync.
+- **Monitoring (read-only, built first):**
+  - overview page: per-database traffic lights (last success age, last verified age,
+    next scheduled run),
+  - backup timeline and size-trend sparkline per database (surfaces the "dump suddenly
+    60% smaller" anomaly visually),
+  - per-destination status grid (uploaded / failed / pruned counts, free-space where known),
+  - run detail page: duration, checksum, log tail and stderr excerpt on failures,
+  - retention view: what exists where, what the next prune will delete.
+- **Management actions (second, each behind a confirmation step):**
+  - trigger backup / verify / prune now (runs enqueue through the same lock as cron —
+    never a second concurrent pipeline),
+  - browse and download artifacts from any destination,
+  - send a test notification; re-run `doctor` and show results,
+  - enable/disable a database's schedule.
+  - **Not included:** restore-from-browser. Restores stay CLI-only (`docs/RESTORE.md`) —
+    too destructive for a web click.
+- **Security from day one:** auth required before first release of the page (basic-auth or
+  token, constant-time comparison), binds to `127.0.0.1` by default (reverse-proxy for
+  remote access), CSRF protection on all POST actions, no credentials ever rendered.
+- JSON API endpoints (`/api/status`, `/api/runs`) so external monitors can scrape the same
+  data the dashboard shows.
+
+**Tests:** `rack-test` request specs for every page and action, auth-required-everywhere
+matrix, CSRF rejection, management actions respect the run lock, JSON API contract tests.
+
+**Exit criteria:** `pgkeeper web` shows live health for a real multi-DB config; a triggered
+backup from the browser completes and appears in the timeline; every route 401s without
+credentials.
+
+---
+
+## Phase 10 — Packaging, Docker & Docs
 
 **Goal:** easy adoption and repeatable deployment.
 
@@ -351,12 +399,14 @@ with one documented command sequence.
     secret handling), CHANGELOG, upgrade notes.
 - `pgkeeper doctor` extended to validate each configured provider's credentials with a
   harmless API call.
+- Docker image runs the daemon + dashboard together behind one entrypoint;
+  `docker-compose.example.yml` exposes the dashboard port with auth pre-wired.
 
 **Exit criteria:** a newcomer reaches a working scheduled cloud backup using only the docs.
 
 ---
 
-## Phase 10 — Hardening & Nice-to-Haves (post-v1 backlog)
+## Phase 11 — Hardening & Nice-to-Haves (post-v1 backlog)
 
 - **WAL archiving / PITR**: logical dumps lose everything since the last dump. Document the
   gap clearly in v1; later integrate `pg_receivewal`/`pgBackRest` guidance or basic WAL
@@ -368,7 +418,8 @@ with one documented command sequence.
   classic sign of a silently broken dump).
 - Multi-server orchestration (one PgKeeper host backing up many clusters).
 - Sensitive-data filtering (exclude tables / anonymization hooks) for dev-copy exports.
-- Web dashboard (thin Sinatra status page) — explicitly out of scope for v1.
+- Dashboard extras: multi-user accounts/roles, restore-from-browser (if ever, behind heavy
+  guards), historical charts beyond the v1 sparklines.
 
 ---
 
@@ -386,9 +437,11 @@ with one documented command sequence.
 | One cloud outage failing the whole run | Phase 4 (independent per-destination status) |
 | Disk filling up | Phase 2 (preflight) + Phase 5 (retention) |
 | Deleting your only good backup | Phase 5 (safety rails) |
-| `pg_dump`/server version mismatch | Phase 0/9 (`doctor`) |
+| `pg_dump`/server version mismatch | Phase 0/10 (`doctor`) |
 | Secrets in config files | Phase 1 (ENV/ERB, pgpass support) |
-| PITR expectations vs logical dumps | Phase 10 (documented gap, future WAL support) |
+| Unauthenticated dashboard exposing backup data | Phase 9 (auth + localhost bind + CSRF from day one) |
+| Restore triggered by a stray web click | Phase 9 (restores stay CLI-only) |
+| PITR expectations vs logical dumps | Phase 11 (documented gap, future WAL support) |
 
 ---
 
@@ -411,5 +464,5 @@ with one documented command sequence.
 | **v0.1** | 0–2 | Local scheduled-able dumps with manifests |
 | **v0.2** | 3–4 | Compressed/zipped, optionally encrypted, multi-destination cloud uploads |
 | **v0.3** | 5–6 | Retention + verified restores |
-| **v1.0** | 7–9 | Email reporting, scheduling installer, Docker, docs — production-ready |
-| **v1.x** | 10 | PITR guidance, metrics, anomaly detection |
+| **v1.0** | 7–10 | Email reporting, scheduling installer, web dashboard, Docker, docs — production-ready |
+| **v1.x** | 11 | PITR guidance, metrics, anomaly detection, dashboard extras |
