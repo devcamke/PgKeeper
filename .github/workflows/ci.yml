@@ -14,6 +14,8 @@ jobs:
         with:
           install: true
           cache: true
+      - name: Verify pinned Ruby (4.0.6)
+        run: mise exec -- ruby -e 'exit RUBY_VERSION == "4.0.6" ? 0 : abort("expected Ruby 4.0.6, got #{RUBY_VERSION}")'
       - name: Install dependencies
         run: mise exec -- bundle install
       - name: RuboCop
@@ -52,6 +54,8 @@ jobs:
         with:
           install: true
           cache: true
+      - name: Verify pinned Ruby (4.0.6)
+        run: mise exec -- ruby -e 'exit RUBY_VERSION == "4.0.6" ? 0 : abort("expected Ruby 4.0.6, got #{RUBY_VERSION}")'
       - name: Install dependencies
         run: mise exec -- bundle install
       - name: Run tests
