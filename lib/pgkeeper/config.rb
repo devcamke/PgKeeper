@@ -19,6 +19,13 @@ module PgKeeper
     COMPRESSION = %w[none gzip zip zstd].freeze
     NOTIFY_EVENTS = %w[success failure].freeze
 
+    # Allowed keys per storage backend type, for strict validation.
+    STORAGE_KEYS = {
+      "local" => %w[type path],
+      "s3" => %w[type bucket region prefix endpoint access_key_id secret_access_key force_path_style],
+      "memory" => %w[type]
+    }.freeze
+
     DEFAULT_WORKDIR = "/var/backups/pgkeeper"
 
     attr_reader :source, :raw, :databases, :storage, :retention,
@@ -165,8 +172,23 @@ module PgKeeper
       end
 
       type = entry["type"]
-      problem("storage[#{idx}] (local) requires a `path`") if type == "local" && !entry["path"].is_a?(String)
+      unless STORAGE_KEYS.key?(type)
+        problem("storage[#{idx}] has unknown type #{type.inspect} (expected one of #{STORAGE_KEYS.keys.join(', ')})")
+        return entry
+      end
+
+      reject_unknown_keys(entry, STORAGE_KEYS.fetch(type), "storage[#{idx}] (#{type})")
+      validate_storage_required(entry, type, idx)
       entry
+    end
+
+    def validate_storage_required(entry, type, idx)
+      case type
+      when "local"
+        problem("storage[#{idx}] (local) requires a `path`") unless entry["path"].is_a?(String)
+      when "s3"
+        problem("storage[#{idx}] (s3) requires a `bucket`") unless entry["bucket"].is_a?(String)
+      end
     end
 
     def build_retention(hash)

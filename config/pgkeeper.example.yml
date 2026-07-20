@@ -31,18 +31,37 @@ databases:
       - events_raw           # skip a huge, reproducible table
     password: <%= ENV["PGKEEPER_ANALYTICS_PASSWORD"] %>
 
-# Compression of the artifact. `custom` dumps are already compressed by
-# pg_dump, so `none` is a sensible default there. (Phase 3.)
-compression: none
+# Compression of the artifact: none | gzip | zip | zstd.
+# `custom`/`directory` dumps are already compressed by pg_dump, so external
+# compression is skipped for them automatically. `zstd` requires the zstd
+# binary on PATH.
+compression: gzip
 
-# Encryption at rest before anything ships to third-party clouds. (Phase 3.)
+# Encryption at rest, applied before anything ships to third-party clouds.
+# type: aes256gcm (built in, OpenSSL) or gpg (shells out to gpg).
+# Provide the key via `passphrase_env` (an env var name) or a `keyfile`.
 encryption:
   enabled: false
+  type: aes256gcm
+  passphrase_env: PGKEEPER_ENCRYPTION_PASSPHRASE
 
-# Backup destinations. `local` ships in v0.1; cloud backends are additive.
+# Backup destinations. Every run fans out to all of them; each is tracked
+# independently, so one cloud being down never fails the local copy.
 storage:
   - type: local
     path: /var/backups/pgkeeper/backups
+
+  # S3-compatible object storage (AWS S3, MinIO, Backblaze B2, Cloudflare R2,
+  # DigitalOcean Spaces). Requires the aws-sdk-s3 gem. Credentials come from the
+  # environment / instance profile by default; set an `endpoint` for non-AWS.
+  # - type: s3
+  #   bucket: my-pgkeeper-backups
+  #   region: us-east-1
+  #   prefix: production
+  #   # endpoint: https://s3.us-west-000.backblazeb2.com
+  #   # force_path_style: true   # needed by MinIO and some S3-compatibles
+  #   access_key_id: <%= ENV["AWS_ACCESS_KEY_ID"] %>
+  #   secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
 
 # Retention policy, enforced per destination. (Phase 5.)
 retention:

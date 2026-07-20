@@ -38,4 +38,16 @@ module PgKeeper
 
   # Raised on preflight failures (insufficient disk space, unwritable target).
   class PreflightError < Error; end
+
+  # Raised by storage adapters when an upload/download/verify fails after any
+  # retries. Carries the destination name so per-destination reporting can name
+  # the backend that failed.
+  class StorageError < Error
+    attr_reader :destination
+
+    def initialize(message, destination: nil)
+      @destination = destination
+      super(message)
+    end
+  end
 end

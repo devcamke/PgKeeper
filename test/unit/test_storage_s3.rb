@@ -1,0 +1,79 @@
+# frozen_string_literal: true
+
+require "test_helper"
+require "support/storage_contract"
+require "aws-sdk-s3"
+
+module PgKeeper
+  # Exercises the real S3 adapter against a real Aws::S3::Client whose responses
+  # are stubbed by a stateful in-memory store — so every adapter code path runs,
+  # without a network or credentials, and the adapter must satisfy the same
+  # storage contract as Local and Memory.
+  class TestStorageS3 < Minitest::Test
+    include TestHelpers
+    include StorageContract
+
+    def setup
+      @store = {}
+      @client = stubbed_client(@store)
+    end
+
+    def build_adapter
+      Storage::S3.with_client(@client, bucket: "backups", prefix: "pgk", logger: null_logger)
+    end
+
+    def test_prefix_is_applied_to_keys
+      with_local_file("data") do |src, _dir|
+        adapter.upload(src, "db/app.dump")
+        # The stored key carries the configured prefix.
+        assert_includes @store.keys, "pgk/db/app.dump"
+      end
+    end
+
+    def test_name_is_s3_url
+      assert_equal "s3://backups/pgk/", build_adapter.name
+    end
+
+    def test_missing_sdk_message
+      # The lazy require raises a helpful EnvironmentError message when absent;
+      # here the gem is present, so just assert the adapter constructed fine.
+      assert_instance_of Storage::S3, build_adapter
+    end
+
+    private
+
+    def stubbed_client(store)
+      client = Aws::S3::Client.new(stub_responses: true, region: "us-east-1")
+      client.stub_responses(:head_bucket, {})
+      client.stub_responses(:put_object, lambda { |ctx|
+        store[ctx.params[:key]] = read_body(ctx.params[:body])
+        {}
+      })
+      client.stub_responses(:get_object, lambda { |ctx|
+        data = store[ctx.params[:key]]
+        data ? { body: data } : "NoSuchKey"
+      })
+      client.stub_responses(:head_object, lambda { |ctx|
+        data = store[ctx.params[:key]]
+        data ? { content_length: data.bytesize } : "NotFound"
+      })
+      client.stub_responses(:delete_object, lambda { |ctx|
+        store.delete(ctx.params[:key])
+        {}
+      })
+      client.stub_responses(:list_objects_v2, lambda { |ctx|
+        prefix = ctx.params[:prefix].to_s
+        contents = store.select { |k, _| k.start_with?(prefix) }.map { |k, v| { key: k, size: v.bytesize } }
+        { contents: contents, is_truncated: false, key_count: contents.length }
+      })
+      client
+    end
+
+    def read_body(body)
+      return body.to_s unless body.respond_to?(:read)
+
+      body.rewind if body.respond_to?(:rewind)
+      body.read
+    end
+  end
+end

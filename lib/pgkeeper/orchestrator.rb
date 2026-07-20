@@ -8,39 +8,51 @@ require "open3"
 module PgKeeper
   # Drives a backup run end-to-end for one or more databases.
   #
-  # Lifecycle per run:
-  #   1. acquire an flock so overlapping cron runs can't corrupt each other,
-  #   2. for each database: dump into a temp dir *on the destination filesystem*,
-  #      checksum it, write a manifest, then atomically rename into place — so a
-  #      crash mid-dump never leaves a half-written file that looks complete,
-  #   3. optionally capture cluster globals (roles/tablespaces),
-  #   4. collect per-database results and derive an overall exit code.
+  # Per database, per artifact (the dump, and optionally cluster globals) the
+  # pipeline is:
   #
-  # Failures are isolated: one database blowing up doesn't abort the others, and
-  # the run reports partial success (exit 1) vs total failure (exit 2).
+  #   pg_dump → package (directory formats) → compress → encrypt → manifest
+  #           → fan out to every configured storage destination
+  #
+  # Cross-cutting guarantees:
+  #   * an flock stops overlapping cron runs from colliding,
+  #   * work happens in a staging dir and each storage backend finalizes
+  #     atomically, so a crash never leaves a half-written backup,
+  #   * every artifact gets a SHA-256 manifest describing exactly how to reverse
+  #     the pipeline (compression + encryption) on restore,
+  #   * destinations are independent — one cloud outage fails only that
+  #     destination, and the report records status per-destination.
   class Orchestrator
-    # Outcome for a single database.
+    # Per-destination upload outcome for one artifact.
+    Destination = Struct.new(:name, :status, :error, keyword_init: true) do
+      def ok? = status == :ok
+    end
+
+    # Outcome for a single database. +status+ is :success (dumped and stored
+    # everywhere), :partial (dumped, but at least one destination failed), or
+    # :failure (the dump itself failed).
     Result = Struct.new(:database, :status, :artifacts, :error, :duration_seconds, keyword_init: true) do
       def success? = status == :success
+      def partial? = status == :partial
       def failure? = status == :failure
     end
 
     # Aggregate outcome for a whole run.
     RunReport = Struct.new(:results, keyword_init: true) do
       def succeeded = results.select(&:success?)
+      def partial = results.select(&:partial?)
       def failed = results.select(&:failure?)
 
       def exit_code
-        return ExitCode::SUCCESS if results.empty? || failed.empty?
-        return ExitCode::FAILURE if succeeded.empty?
+        return ExitCode::SUCCESS if results.empty? || results.all?(&:success?)
+        return ExitCode::FAILURE if results.all?(&:failure?)
 
         ExitCode::PARTIAL
       end
     end
 
-    # Everything a single database's dump needs, threaded through the dump
-    # helpers as one value instead of a long parameter list.
-    DumpContext = Struct.new(:db, :staging, :timestamp, :began_at, :destination, :log, keyword_init: true)
+    # Per-database dump context, threaded through the pipeline as one value.
+    DumpContext = Struct.new(:db, :staging, :timestamp, :began_at, :log, keyword_init: true)
 
     def initialize(config, logger: PgKeeper.logger, clock: Time, min_free_bytes: 100 * 1024 * 1024)
       @config = config
@@ -53,17 +65,23 @@ module PgKeeper
     # +only+). Returns a {RunReport}.
     def run(only: nil)
       databases = select_databases(only)
-      destination = ensure_destination
+      @adapters = Storage.build_all(@config.storage, logger: @logger)
+      @encryptor = Crypto.build(@config.encryption)
+      workdir = ensure_workdir
       run_logger = @logger.with(run: run_id)
-      run_logger.info("backup run starting", databases: databases.map(&:name).join(","), destination: destination)
+      run_logger.info("backup run starting",
+                      databases: databases.map(&:name).join(","),
+                      destinations: @adapters.map(&:name).join(","),
+                      compression: @config.compression,
+                      encryption: @encryptor&.name || "none")
 
-      report = Lock.acquire(lock_path(destination)) do
-        results = databases.map { |db| backup_database(db, destination, run_logger) }
-        RunReport.new(results: results)
+      report = Lock.acquire(File.join(workdir, ".pgkeeper.lock")) do
+        RunReport.new(results: databases.map { |db| backup_database(db, workdir, run_logger) })
       end
 
       run_logger.info("backup run finished",
                       succeeded: report.succeeded.length,
+                      partial: report.partial.length,
                       failed: report.failed.length,
                       exit_code: report.exit_code)
       report
@@ -74,39 +92,31 @@ module PgKeeper
     def select_databases(only)
       return @config.databases if only.nil? || only.empty?
 
-      wanted = Array(only)
-      wanted.map do |name|
+      Array(only).map do |name|
         @config.database(name) || raise(Error, "unknown database in --only: #{name}")
       end
     end
 
-    # Resolve the local destination directory, creating it if needed. v0.1 ships
-    # local storage; cloud backends land the same artifacts in later phases.
-    def ensure_destination
-      path = @config.local_path
-      raise ConfigError, "no local storage target configured" if path.nil?
-
-      FileUtils.mkdir_p(path)
-      path
+    def ensure_workdir
+      dir = @config.workdir
+      FileUtils.mkdir_p(dir)
+      dir
     end
 
-    def lock_path(destination)
-      File.join(destination, ".pgkeeper.lock")
-    end
-
-    def backup_database(db, destination, run_logger)
+    def backup_database(db, workdir, run_logger)
       log = run_logger.with(db: db.name)
       started = monotonic
       began_at = @clock.now.utc
       log.info("dumping database")
 
-      preflight!(destination)
-      staging = Dir.mktmpdir(".pgkeeper-staging-", destination)
-      artifacts = perform_dump(db, staging, began_at, destination, log)
+      preflight!(workdir)
+      staging = Dir.mktmpdir(".pgkeeper-staging-", workdir)
+      artifacts = perform_dump(db, staging, began_at, log)
 
+      status = derive_status(artifacts)
       duration = (monotonic - started).round(3)
-      log.info("dump complete", artifacts: artifacts.length, duration_s: duration)
-      Result.new(database: db.name, status: :success, artifacts: artifacts, duration_seconds: duration)
+      log.info("database done", status: status, artifacts: artifacts.length, duration_s: duration)
+      Result.new(database: db.name, status: status, artifacts: artifacts, duration_seconds: duration)
     rescue StandardError => e
       duration = (monotonic - started).round(3)
       log.error("dump failed", error: e.message, error_class: e.class.name)
@@ -115,19 +125,21 @@ module PgKeeper
       FileUtils.remove_entry(staging) if staging && File.exist?(staging)
     end
 
-    # Dump the database (and optionally globals) into the staging dir, then
-    # finalize each artifact into the destination atomically. Returns finalized
-    # artifact descriptors.
-    def perform_dump(db, staging, began_at, destination, log)
-      ctx = DumpContext.new(
-        db: db,
-        staging: staging,
-        timestamp: began_at.strftime("%Y-%m-%dT%H%M%SZ"),
-        began_at: began_at,
-        destination: destination,
-        log: log
-      )
+    # :success if every artifact reached every destination; :partial if any
+    # destination failed for any artifact; the dump itself failing is handled by
+    # the rescue above.
+    def derive_status(artifacts)
+      all_dest = artifacts.flat_map { |a| a[:destinations] }
+      return :success if all_dest.empty? || all_dest.all?(&:ok?)
 
+      :partial
+    end
+
+    def perform_dump(db, staging, began_at, log)
+      ctx = DumpContext.new(
+        db: db, staging: staging, began_at: began_at,
+        timestamp: began_at.strftime("%Y-%m-%dT%H%M%SZ"), log: log
+      )
       artifacts = [dump_primary(ctx)]
       artifacts << dump_globals(ctx) if db.include_globals
       artifacts.compact
@@ -135,94 +147,115 @@ module PgKeeper
 
     def dump_primary(ctx)
       dumper = Dump::PgDump.new(ctx.db, logger: ctx.log)
-      staged = File.join(ctx.staging, "#{ctx.db.slug}-#{ctx.timestamp}.#{dumper.extension}")
-      duration = timed { dumper.dump(to: staged) }
-
-      attrs = base_manifest(ctx, duration).merge(
-        "kind" => "database",
-        "format" => ctx.db.format,
-        "pg_dump_version" => dumper.version
-      )
-      finalize(staged, Manifest.for_artifact(staged, attrs), ctx.destination)
+      raw = File.join(ctx.staging, "#{ctx.db.slug}-#{ctx.timestamp}.#{dumper.extension}")
+      duration = timed { dumper.dump(to: raw) }
+      process_artifact(ctx, raw, kind: "database", dump_format: ctx.db.format, duration: duration,
+                                 extra: { "pg_dump_version" => dumper.version })
     end
 
     def dump_globals(ctx)
       dumper = Dump::PgDumpall.new(ctx.db, logger: ctx.log)
-      staged = File.join(ctx.staging, "#{ctx.db.slug}-globals-#{ctx.timestamp}.sql")
-      duration = timed { dumper.dump_globals(to: staged) }
-
-      attrs = base_manifest(ctx, duration).merge(
-        "kind" => "globals",
-        "format" => "plain",
-        "pg_dumpall_version" => dumper.version
-      )
-      finalize(staged, Manifest.for_artifact(staged, attrs), ctx.destination)
+      raw = File.join(ctx.staging, "#{ctx.db.slug}-globals-#{ctx.timestamp}.sql")
+      duration = timed { dumper.dump_globals(to: raw) }
+      process_artifact(ctx, raw, kind: "globals", dump_format: "plain", duration: duration,
+                                 extra: { "pg_dumpall_version" => dumper.version })
     end
 
-    # Manifest fields common to every artifact in a run.
-    def base_manifest(ctx, duration)
+    # Run one raw dump output through package → compress → encrypt → manifest →
+    # upload, returning a descriptor of the finished artifact.
+    def process_artifact(ctx, raw, kind:, dump_format:, duration:, extra:)
+      packaged, compression = package_and_compress(raw, dump_format, ctx)
+      final, encryption = maybe_encrypt(packaged, ctx)
+
+      manifest = build_manifest(ctx, final, kind: kind, dump_format: dump_format, duration: duration,
+                                            compression: compression, encryption: encryption, extra: extra)
+      destinations = distribute(final, manifest, ctx)
+
       {
-        "database" => ctx.db.database,
-        "compression" => "none",
-        "started_at" => ctx.began_at.iso8601,
-        "finished_at" => @clock.now.utc.iso8601,
-        "duration_seconds" => duration,
-        "server_version" => server_version(ctx.db)
+        artifact: File.basename(final), kind: kind,
+        size_bytes: manifest.size_bytes, checksum: manifest.checksum,
+        compression: compression, encryption: encryption, destinations: destinations
       }
     end
 
-    # Run a block, returning its wall-clock duration in seconds (3 dp).
-    def timed
-      started = monotonic
-      yield
-      (monotonic - started).round(3)
+    # Turn the raw dump into a single compressed file. Directory-format dumps are
+    # packaged into a zip (they can't be uploaded as a directory). custom/
+    # directory outputs are already compressed by pg_dump, so external
+    # compression is skipped there with a note.
+    def package_and_compress(raw, dump_format, ctx)
+      if dump_format == "directory"
+        dest = "#{raw}.zip"
+        Compress::Zip.new.compress_tree(raw, dest)
+        FileUtils.remove_entry(raw)
+        return [dest, "zip"]
+      end
+
+      configured = @config.compression
+      if %w[custom].include?(dump_format) && configured != "none"
+        ctx.log.debug("skipping external compression (dump already compressed)", format: dump_format)
+        return [raw, "none"]
+      end
+      return [raw, "none"] if configured == "none"
+
+      compressor = Compress.for(configured)
+      dest = "#{raw}.#{compressor.extension}"
+      compressor.compress(raw, dest)
+      FileUtils.remove_entry(raw)
+      [dest, configured]
     end
 
-    # Move a staged artifact + its manifest into the destination directory with
-    # an atomic rename (same filesystem, since staging lives under destination).
-    def finalize(staged_artifact, manifest, destination)
-      final_artifact = File.join(destination, File.basename(staged_artifact))
-      manifest.write(File.join(File.dirname(staged_artifact), "#{File.basename(staged_artifact)}#{Manifest::SUFFIX}"))
+    def maybe_encrypt(path, ctx)
+      return [path, "none"] if @encryptor.nil?
 
-      final_manifest = Manifest.path_for(final_artifact)
-      staged_manifest = Manifest.path_for(staged_artifact)
-
-      File.chmod(0o600, staged_artifact) if File.file?(staged_artifact)
-      File.chmod(0o600, staged_manifest) if File.file?(staged_manifest)
-      File.rename(staged_artifact, final_artifact)
-      File.rename(staged_manifest, final_manifest)
-
-      {
-        artifact: final_artifact,
-        manifest: final_manifest,
-        kind: manifest.data["kind"],
-        size_bytes: manifest.size_bytes,
-        checksum: manifest.checksum
-      }
+      dest = "#{path}.#{@encryptor.extension}"
+      @encryptor.encrypt(path, dest)
+      FileUtils.remove_entry(path)
+      ctx.log.debug("encrypted artifact", type: @encryptor.name)
+      [dest, @encryptor.name]
     end
 
-    # Fail before dumping if the destination filesystem is low on space — better
-    # a clear preflight error than a truncated dump when the disk fills.
-    def preflight!(destination)
-      free = free_bytes(destination)
-      return if free.nil? # unknown; don't block
+    def build_manifest(ctx, final, kind:, dump_format:, duration:, compression:, encryption:, extra:)
+      attrs = {
+        "kind" => kind, "database" => ctx.db.database,
+        "dump_format" => dump_format, "compression" => compression, "encryption" => encryption,
+        "started_at" => ctx.began_at.iso8601, "finished_at" => @clock.now.utc.iso8601,
+        "duration_seconds" => duration, "server_version" => server_version(ctx.db)
+      }.merge(extra)
+      manifest = Manifest.for_artifact(final, attrs)
+      manifest.write(Manifest.path_for(final))
+      manifest
+    end
 
-      return unless free < @min_free_bytes
+    # Upload the artifact + its manifest sidecar to every destination, tracking
+    # each independently. A folder-per-database remote layout keeps listings
+    # tidy.
+    def distribute(final, _manifest, ctx)
+      remote = "#{ctx.db.slug}/#{File.basename(final)}"
+      manifest_path = Manifest.path_for(final)
 
-      raise PreflightError,
-            "insufficient free space at #{destination}: #{free} bytes free, " \
-            "need at least #{@min_free_bytes}"
+      @adapters.map do |adapter|
+        adapter.upload(final, remote)
+        adapter.upload(manifest_path, Manifest.path_for(remote))
+        ctx.log.debug("stored", destination: adapter.name, remote: remote)
+        Destination.new(name: adapter.name, status: :ok)
+      rescue StorageError => e
+        ctx.log.error("destination failed", destination: adapter.name, error: e.message)
+        Destination.new(name: adapter.name, status: :failed, error: e.message)
+      end
+    end
+
+    def preflight!(dir)
+      free = free_bytes(dir)
+      return if free.nil? || free >= @min_free_bytes
+
+      raise PreflightError, "insufficient free space at #{dir}: #{free} bytes free, need #{@min_free_bytes}"
     end
 
     def free_bytes(path)
       out, status = Open3.capture2("df", "-Pk", path)
       return nil unless status.success?
 
-      line = out.lines[1]
-      return nil if line.nil?
-
-      available_kb = line.split[3]
-      Integer(available_kb) * 1024
+      Integer(out.lines[1].split[3]) * 1024
     rescue StandardError
       nil
     end
@@ -234,9 +267,13 @@ module PgKeeper
       nil
     end
 
-    def monotonic
-      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    def timed
+      started = monotonic
+      yield
+      (monotonic - started).round(3)
     end
+
+    def monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
     def run_id
       format("%<time>s-%<pid>d", time: @clock.now.utc.strftime("%Y%m%dT%H%M%SZ"), pid: Process.pid)
