@@ -230,22 +230,37 @@ module PgKeeper
         return {}
       end
 
-      email = hash["email"]
-      validate_notification_events(email) if email.is_a?(Hash)
+      reject_unknown_keys(hash, %w[email webhook healthcheck], "notifications")
+      validate_notifier(hash["email"], "email")
+      validate_notifier(hash["webhook"], "webhook", required: %w[url])
+      validate_notifier(hash["healthcheck"], "healthcheck", required: %w[url])
       hash
+    end
+
+    def validate_notifier(cfg, name, required: [])
+      return if cfg.nil?
+
+      unless cfg.is_a?(Hash)
+        problem("notifications.#{name} must be a mapping")
+        return
+      end
+
+      required.each do |key|
+        problem("notifications.#{name} requires `#{key}`") unless cfg[key].is_a?(String)
+      end
+      validate_notification_events(cfg, name)
     end
 
     # Validate the `on:` trigger list. Note the YAML 1.1 footgun: Psych parses a
     # bare `on:` key as the boolean `true`, which deep_stringify turns into the
     # string "true". We accept both so the documented `on: [success, failure]`
     # form actually works instead of silently disabling triggers.
-    def validate_notification_events(email)
-      raw = email["on"] || email["true"]
+    def validate_notification_events(cfg, name)
+      raw = cfg["on"] || cfg["true"]
       return if raw.nil?
 
-      events = Array(raw).map(&:to_s)
-      bad = events - NOTIFY_EVENTS
-      problem("notifications.email.on has unknown event(s): #{bad.join(', ')}") unless bad.empty?
+      bad = Array(raw).map(&:to_s) - NOTIFY_EVENTS
+      problem("notifications.#{name}.on has unknown event(s): #{bad.join(', ')}") unless bad.empty?
     end
 
     # -- validation helpers ------------------------------------------------

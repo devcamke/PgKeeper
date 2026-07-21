@@ -10,6 +10,8 @@ group :development, :test do
   gem "rubocop", "~> 1.60", require: false
   gem "rubocop-minitest", "~> 0.34", require: false
   gem "rubocop-rake", "~> 0.6", require: false
+  # Stubs HTTP so webhook / dead-man's-switch notifier tests need no network.
+  gem "webmock", "~> 3.19", require: false
 end
 
 # Optional cloud-storage SDKs. These are not runtime dependencies of the gem

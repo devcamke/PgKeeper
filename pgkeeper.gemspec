@@ -35,6 +35,11 @@ Gem::Specification.new do |spec|
   # is pure Ruby, so it's a safe hard dependency.
   spec.add_dependency "rubyzip", "~> 2.3"
 
+  # Email notifications (SMTP + TLS) and the SQLite run-history store that powers
+  # `pgkeeper status`.
+  spec.add_dependency "mail", "~> 2.8"
+  spec.add_dependency "sqlite3", "~> 2.0"
+
   # Ruby 4 no longer ships these as default gems, so declare them explicitly
   # rather than relying on them being present in the standard library.
   spec.add_dependency "erb", "~> 4.0"
