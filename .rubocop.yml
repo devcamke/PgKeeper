@@ -25,6 +25,10 @@ Metrics/AbcSize:
     - "test/**/*.rb"
 Metrics/ClassLength:
   Max: 250
+  Exclude:
+    # The Thor CLI aggregates every command plus its presentation helpers; it is
+    # the natural place for that surface area to accumulate.
+    - "lib/pgkeeper/cli.rb"
 Metrics/BlockLength:
   # Thor keeps command helpers inside a single `no_commands` block by design.
   AllowedMethods:
