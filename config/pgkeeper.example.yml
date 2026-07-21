@@ -69,10 +69,30 @@ retention:
   keep_weekly: 4
   keep_monthly: 6
 
-# Notifications. (Phase 7.) Failure alerts are strongly recommended.
+# Notifications. Failure alerts are strongly recommended. Each notifier fires
+# only for the events listed under its `on:`; a run counts as "success" only
+# when every database reached every destination.
 notifications:
   email:
     to:
       - ops@example.com
-    on:
-      - failure
+    from: pgkeeper@example.com
+    on: [failure]              # add `success` for per-run success mails
+    smtp:
+      host: smtp.example.com
+      port: 587
+      user_name: pgkeeper
+      password: <%= ENV["PGKEEPER_SMTP_PASSWORD"] %>
+
+  # Generic JSON webhook (Slack/Teams/Discord/custom). Set `format: slack` for a
+  # chat-friendly message instead of the full JSON payload.
+  # webhook:
+  #   url: <%= ENV["PGKEEPER_WEBHOOK_URL"] %>
+  #   format: slack
+  #   on: [success, failure]
+
+  # Dead-man's switch: pings this URL on success so a monitor (healthchecks.io,
+  # Uptime Kuma, Cronitor, ...) alarms when a scheduled run silently never runs.
+  # healthcheck:
+  #   url: <%= ENV["PGKEEPER_HEALTHCHECK_URL"] %>
+  #   # fail_url: <%= ENV["PGKEEPER_HEALTHCHECK_FAIL_URL"] %>  # also ping on failure
