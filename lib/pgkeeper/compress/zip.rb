@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "zip"
+require "fileutils"
 
 module PgKeeper
   module Compress
@@ -53,6 +54,25 @@ module PgKeeper
           end
         end
         dest
+      end
+
+      # Reverse {#compress_tree}: extract a zip archive into +dest_dir+,
+      # recreating the directory structure. Used to restore a directory-format
+      # dump before handing it to pg_restore.
+      def decompress_tree(source, dest_dir)
+        FileUtils.mkdir_p(dest_dir)
+        ::Zip::File.open(source) do |zip|
+          zip.each do |entry|
+            target = File.join(dest_dir, entry.name)
+            if entry.directory?
+              FileUtils.mkdir_p(target)
+            else
+              FileUtils.mkdir_p(File.dirname(target))
+              entry.extract(target) { true }
+            end
+          end
+        end
+        dest_dir
       end
     end
   end
