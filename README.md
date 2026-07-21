@@ -8,12 +8,12 @@ SharePoint/OneDrive, S3-compatible), enforces retention policies, verifies that 
 are actually restorable, reports status via email, and includes an optional web dashboard
 (`pgkeeper web`) for monitoring backup health and triggering runs.
 
-**Status:** v0.2 (Phases 0–4) is implemented and tested — dumps are compressed,
-optionally encrypted, and fanned out to multiple local and cloud destinations, each with
-a checksummed manifest. See [PLAN.md](PLAN.md) for the full multi-phase build plan and
-roadmap.
+**Status:** v0.3 (Phases 0–6) is implemented and tested — backups are compressed,
+optionally encrypted, fanned out to multiple destinations, pruned by a retention policy,
+and **verifiably restorable**. See [PLAN.md](PLAN.md) for the full multi-phase build plan
+and [docs/RESTORE.md](docs/RESTORE.md) for the restore runbook.
 
-## What works today (v0.2)
+## What works today (v0.3)
 
 - **`pgkeeper doctor`** — checks that `pg_dump`/`pg_restore`/`pg_dumpall`/`psql` are on
   PATH, validates your config, health-checks every storage destination, confirms each
@@ -34,8 +34,19 @@ roadmap.
   - Cluster globals (`pg_dumpall --globals-only`), a SHA-256 manifest per artifact,
     flock-guarded runs, and staging + atomic finalize so a crash never leaves a
     half-written backup.
-- **`pgkeeper list`** — lists local backups with size, age, and the compression/encryption
-  pipeline applied.
+- **`pgkeeper list`** — lists backups across every destination with size, age, the
+  compression/encryption pipeline, and verification status.
+- **`pgkeeper prune`** — enforces the retention policy (`keep_last` and/or GFS
+  daily/weekly/monthly/yearly), per destination and per database. Dry-run by default;
+  `--apply` to delete. Safety rails: never deletes the newest backup, never prunes to
+  zero, never deletes anything newer than the last verified backup.
+- **`pgkeeper verify [--deep]`** — Tier 1 re-checksums the artifact, Tier 2 proves it's a
+  readable archive (`pg_restore --list` / non-empty SQL), and `--deep` restores it into a
+  throwaway scratch database. Passing marks the backup verified.
+- **`pgkeeper restore`** — fetches a backup from a destination, reverses the
+  encryption + compression pipeline, and restores into a target database via
+  `pg_restore`/`psql`. Overwriting a non-empty database requires `--force`. See
+  [docs/RESTORE.md](docs/RESTORE.md).
 
 Meaningful exit codes throughout: `0` success, `1` partial (some destinations/databases
 failed), `2` total failure.
