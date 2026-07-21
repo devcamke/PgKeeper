@@ -8,12 +8,13 @@ SharePoint/OneDrive, S3-compatible), enforces retention policies, verifies that 
 are actually restorable, reports status via email, and includes an optional web dashboard
 (`pgkeeper web`) for monitoring backup health and triggering runs.
 
-**Status:** v0.3 (Phases 0–6) is implemented and tested — backups are compressed,
+**Status:** v0.7 (Phases 0–7) is implemented and tested — backups are compressed,
 optionally encrypted, fanned out to multiple destinations, pruned by a retention policy,
-and **verifiably restorable**. See [PLAN.md](PLAN.md) for the full multi-phase build plan
-and [docs/RESTORE.md](docs/RESTORE.md) for the restore runbook.
+**verifiably restorable**, and now **reported on** via run-history, email/webhook alerts,
+and a dead-man's switch. See [PLAN.md](PLAN.md) for the full multi-phase build plan and
+[docs/RESTORE.md](docs/RESTORE.md) for the restore runbook.
 
-## What works today (v0.3)
+## What works today
 
 - **`pgkeeper doctor`** — checks that `pg_dump`/`pg_restore`/`pg_dumpall`/`psql` are on
   PATH, validates your config, health-checks every storage destination, confirms each
@@ -47,9 +48,17 @@ and [docs/RESTORE.md](docs/RESTORE.md) for the restore runbook.
   encryption + compression pipeline, and restores into a target database via
   `pg_restore`/`psql`. Overwriting a non-empty database requires `--force`. See
   [docs/RESTORE.md](docs/RESTORE.md).
+- **`pgkeeper status`** — reads the SQLite run-history and shows the most recent backup
+  per database (status, age, size), or recent runs for one database with `--database`.
+- **Notifications** (fired automatically after each run, and testable with
+  `pgkeeper test-notification`): **email** (SMTP+TLS, HTML+text, success/failure
+  triggers), a generic/Slack **webhook**, and a **dead-man's-switch** ping so a monitor
+  catches a cron that silently never ran. Notifier failures are logged and never affect
+  the backup itself.
 
 Meaningful exit codes throughout: `0` success, `1` partial (some destinations/databases
-failed), `2` total failure.
+failed), `2` total failure. Every run is recorded to a SQLite history store that powers
+`status` (and the forthcoming dashboard).
 
 Storage adapters share one contract (upload / download / list / delete / healthcheck with
 retry + backoff), so local, S3, and the in-memory test backend are provably

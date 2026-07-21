@@ -64,30 +64,72 @@ module PgKeeper
     # Run backups for the selected databases (all, or the subset named in
     # +only+). Returns a {RunReport}.
     def run(only: nil)
+      started_at = @clock.now.utc
+      run_identifier = run_id
       databases = select_databases(only)
+      run_logger = start_run(databases, run_identifier)
+
+      report = Lock.acquire(File.join(@config.workdir, ".pgkeeper.lock")) do
+        RunReport.new(results: databases.map { |db| backup_database(db, @config.workdir, run_logger) })
+      end
+
+      log_run_finished(report, run_logger)
+      finalize_run(report, run_identifier, started_at, run_logger)
+      report
+    end
+
+    private
+
+    # Build the run's adapters/encryptor, ensure the workdir, and log the start.
+    def start_run(databases, run_identifier)
       @adapters = Storage.build_all(@config.storage, logger: @logger)
       @encryptor = Crypto.build(@config.encryption)
-      workdir = ensure_workdir
-      run_logger = @logger.with(run: run_id)
+      ensure_workdir
+      run_logger = @logger.with(run: run_identifier)
       run_logger.info("backup run starting",
                       databases: databases.map(&:name).join(","),
                       destinations: @adapters.map(&:name).join(","),
                       compression: @config.compression,
                       encryption: @encryptor&.name || "none")
+      run_logger
+    end
 
-      report = Lock.acquire(File.join(workdir, ".pgkeeper.lock")) do
-        RunReport.new(results: databases.map { |db| backup_database(db, workdir, run_logger) })
-      end
-
+    def log_run_finished(report, run_logger)
       run_logger.info("backup run finished",
                       succeeded: report.succeeded.length,
                       partial: report.partial.length,
                       failed: report.failed.length,
                       exit_code: report.exit_code)
-      report
     end
 
-    private
+    # Persist run history and fire notifications after a run. Both are
+    # best-effort: neither may change the run's outcome, so failures here are
+    # logged and swallowed.
+    def finalize_run(report, run_identifier, started_at, log)
+      finished_at = @clock.now.utc
+      record_history(report, run_identifier, started_at, finished_at, log)
+      dispatch_notifications(report, run_identifier, started_at, finished_at, log)
+    end
+
+    def record_history(report, run_identifier, started_at, finished_at, log)
+      History.new(File.join(@config.workdir, "history.sqlite3"), logger: log)
+             .record(report, run_id: run_identifier, started_at: started_at, finished_at: finished_at)
+    rescue StandardError => e
+      log.warn("history unavailable (non-fatal)", error: e.message)
+    end
+
+    def dispatch_notifications(report, run_identifier, started_at, finished_at, log)
+      notifier = Notify.build(@config, logger: log)
+      return unless notifier.any?
+
+      summary = Notify::Summary.new(
+        report: report, run_id: run_identifier,
+        started_at: started_at, finished_at: finished_at, hostname: Manifest.safe_hostname
+      )
+      notifier.dispatch(summary)
+    rescue StandardError => e
+      log.error("notifications failed (non-fatal)", error: e.message)
+    end
 
     def select_databases(only)
       return @config.databases if only.nil? || only.empty?

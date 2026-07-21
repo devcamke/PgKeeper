@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "thor"
+require "time"
 
 module PgKeeper
   # The +pgkeeper+ command line interface.
@@ -99,6 +100,34 @@ module PgKeeper
     rescue Error, EnvironmentError => e
       say_error e.message, :red
       exit(ExitCode::FAILURE)
+    end
+
+    desc "status", "Show the most recent backup per database from run history"
+    method_option :database, type: :string, desc: "Show recent runs for one database"
+    method_option :limit, type: :numeric, default: 10, desc: "Rows to show with --database"
+    def status
+      config = load_config
+      history = History.new(File.join(config.workdir, "history.sqlite3"), logger: logger)
+      rows = if options[:database]
+               history.recent(limit: options[:limit],
+                              database: options[:database])
+             else
+               history.last_per_database
+             end
+      print_status(rows)
+    end
+
+    desc "test-notification", "Send a test notification through every configured notifier"
+    def test_notification
+      config = load_config
+      notifier = Notify.build(config, logger: logger)
+      unless notifier.any?
+        say "No notifiers configured (see `notifications:` in your config).", :yellow
+        return
+      end
+      results = notifier.dispatch(test_summary)
+      say "Dispatched to #{notifier.backends.length} notifier(s); #{results.count(true)} succeeded.",
+          results.all? ? :green : :yellow
     end
 
     no_commands do
@@ -272,6 +301,46 @@ module PgKeeper
         return sets.max_by(&:timestamp) if %w[latest].include?(selector.to_s) || selector.nil?
 
         sets.find { |s| s.label == selector || s.label.start_with?(selector.to_s) }
+      end
+
+      def print_status(rows)
+        if rows.empty?
+          say "No run history yet. Run `pgkeeper backup` first.", :yellow
+          return
+        end
+        rows.each do |row|
+          glyph, color = status_marker(row.status)
+          say format("%<g>s %<db>-20s %<status>-9s %<age>-14s %<size>9s  %<when>s",
+                     g: glyph, db: row.database, status: row.status,
+                     age: "#{human_age(row.started_at)} ago", size: human_size(row.total_bytes),
+                     when: row.started_at), color
+        end
+      end
+
+      def status_marker(status)
+        { "success" => ["✓", :green], "partial" => ["!", :yellow], "failure" => ["✗", :red] }
+          .fetch(status, ["?", nil])
+      end
+
+      def test_summary
+        report = Orchestrator::RunReport.new(
+          results: [Orchestrator::Result.new(database: "test", status: :success, artifacts: [],
+                                             duration_seconds: 0.0)]
+        )
+        now = Time.now.utc
+        Notify::Summary.new(report: report, run_id: "test-notification",
+                            started_at: now, finished_at: now, hostname: Manifest.safe_hostname)
+      end
+
+      def human_age(iso)
+        seconds = (Time.now - Time.iso8601(iso)).to_i
+        return "#{seconds}s" if seconds < 60
+        return "#{seconds / 60}m" if seconds < 3600
+        return "#{seconds / 3600}h" if seconds < 86_400
+
+        "#{seconds / 86_400}d"
+      rescue ArgumentError, TypeError
+        "?"
       end
 
       def status_glyph(status)
