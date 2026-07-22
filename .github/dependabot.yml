@@ -1,0 +1,21 @@
+# Automated dependency updates. Dependabot opens PRs (which the normal CI runs
+# against) when a dependency or a pinned GitHub Action has a newer version, so
+# security fixes don't wait for someone to remember to bump them.
+version: 2
+updates:
+  - package-ecosystem: bundler
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Batch routine dev/test tooling bumps into one PR to cut noise; security
+      # updates still come through individually and promptly.
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
