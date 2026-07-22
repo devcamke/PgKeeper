@@ -8,12 +8,15 @@ SharePoint/OneDrive, S3-compatible), enforces retention policies, verifies that 
 are actually restorable, reports status via email, and includes an optional web dashboard
 (`pgkeeper web`) for monitoring backup health and triggering runs.
 
-**Status:** v0.8 (Phases 0–8) is implemented and tested — backups are compressed,
-optionally encrypted, fanned out to multiple destinations, pruned by a retention policy,
-**verifiably restorable**, **reported on** (run-history, email/webhook alerts, dead-man's
-switch), and **scheduled** (cron/systemd installers or a built-in daemon). See
-[PLAN.md](PLAN.md) for the full multi-phase build plan and [docs/RESTORE.md](docs/RESTORE.md)
-for the restore runbook.
+**Status:** v0.9 (Phases 0–8 + packaging) is implemented and tested — backups are
+compressed, optionally encrypted, fanned out to multiple destinations, pruned by a
+retention policy, **verifiably restorable**, **reported on** (run-history, email/webhook
+alerts, dead-man's switch), **scheduled** (cron/systemd installers or a built-in daemon),
+and **Docker-packaged**. The web dashboard (Phase 9) is the remaining piece before v1.0.
+
+**Docs:** [PLAN.md](PLAN.md) (roadmap) · [docs/RESTORE.md](docs/RESTORE.md) (restore
+runbook) · [docs/SECURITY.md](docs/SECURITY.md) (least-privilege role, secrets) ·
+[docs/STORAGE.md](docs/STORAGE.md) (storage backends) · [CHANGELOG.md](CHANGELOG.md).
 
 ## What works today
 
@@ -113,6 +116,25 @@ storage:
 
 See [`config/pgkeeper.example.yml`](config/pgkeeper.example.yml) for the full annotated
 schema.
+
+## Docker
+
+The image ships the CLI with the PostgreSQL client tools it needs and runs the
+scheduler daemon by default:
+
+```sh
+docker build -t pgkeeper .
+
+# One-off check (mount your config read-only):
+docker run --rm -v "$PWD/pgkeeper.yml:/app/pgkeeper.yml:ro" pgkeeper doctor -c /app/pgkeeper.yml
+
+# Scheduler + a database together (edit pgkeeper.yml to use host: db first):
+export PGKEEPER_APP_PASSWORD=...
+docker compose -f docker-compose.example.yml up --build
+```
+
+Secrets come from the environment; the image is built non-root and never bakes
+credentials in. See [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Development
 

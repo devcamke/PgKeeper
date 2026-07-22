@@ -1,0 +1,41 @@
+# Example: PgKeeper running its scheduler alongside a Postgres instance.
+#
+#   cp config/pgkeeper.example.yml pgkeeper.yml   # then edit
+#   export PGKEEPER_APP_PASSWORD=...
+#   docker compose -f docker-compose.example.yml up --build
+#
+# The pgkeeper service runs `pgkeeper daemon`, firing backups on the schedule in
+# your config. Run one-offs with:
+#   docker compose -f docker-compose.example.yml run --rm pgkeeper backup -c /app/pgkeeper.yml
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_DB: app
+      POSTGRES_PASSWORD: ${PGKEEPER_APP_PASSWORD:-example}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgkeeper:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Secrets come from the environment; never bake them into the image.
+      PGKEEPER_APP_PASSWORD: ${PGKEEPER_APP_PASSWORD:-example}
+    volumes:
+      # Mount your config read-only, and persist backups on a named volume.
+      - ./pgkeeper.yml:/app/pgkeeper.yml:ro
+      - backups:/var/backups/pgkeeper
+    command: ["daemon", "--config", "/app/pgkeeper.yml"]
+
+volumes:
+  pgdata:
+  backups:
