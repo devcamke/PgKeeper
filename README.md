@@ -20,6 +20,22 @@ full multi-phase build plan, [CHANGELOG.md](CHANGELOG.md) for what shipped when,
 > archiving / point-in-time recovery, so a restore loses everything since the last dump.
 > Schedule accordingly; PITR guidance is on the post-v1 backlog (PLAN.md Phase 11).
 
+## How it works
+
+A trigger (cron, a systemd timer, the built-in daemon, or a click in the dashboard) starts
+`pgkeeper backup`, which runs one pipeline **per database** — `pg_dump` → package →
+compress → encrypt → SHA-256 manifest — then **fans the artifact out to every configured
+destination** independently. Every run is recorded to a SQLite history that powers
+`status`, the dashboard, and notifications, and the lifecycle commands (`list`, `verify`,
+`prune`, `restore`, `doctor`) operate on the stored backups.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.png">
+    <img alt="PgKeeper architecture: triggers feed the per-database backup pipeline (pg_dump → package → compress → encrypt → manifest), which fans out to storage destinations (local, S3, MinIO, B2, R2, Spaces); every run lands in a SQLite run-history that feeds status, the web dashboard, and notifications, while list/verify/prune/restore/doctor operate on the stored backups" src="docs/images/architecture-light.png" width="100%">
+  </picture>
+</p>
+
 ## What works today
 
 - **`pgkeeper doctor`** — checks that `pg_dump`/`pg_restore`/`pg_dumpall`/`psql` are on
@@ -94,6 +110,43 @@ failed), `2` total failure. Every run is recorded to a SQLite history store that
 Storage adapters share one contract (upload / download / list / delete / healthcheck with
 retry + backoff), so local, S3, and the in-memory test backend are provably
 interchangeable. Cloud SDKs are optional dependencies, lazy-loaded only when used.
+
+## The dashboard
+
+`pgkeeper web` serves a read-mostly monitoring UI over the **same** run-history and
+manifests the CLI writes — no second data path. Auth is mandatory, it binds to `127.0.0.1`
+by default, and every mutating action runs through the same lock as cron.
+
+> _Screenshots below use representative sample data._
+
+**Overview** — per-database traffic lights (last run, last-verified age, next scheduled
+run), size-trend sparklines that make a suddenly-smaller dump visible, and a
+per-destination health grid:
+
+![PgKeeper dashboard — overview](docs/images/dashboard-overview.png)
+
+**Runs** — a timeline of every recorded run, each linking to a detail page with
+per-destination status and stderr on failures:
+
+![PgKeeper dashboard — runs timeline](docs/images/dashboard-runs.png)
+
+![PgKeeper dashboard — run detail](docs/images/dashboard-run.png)
+
+**Backups** — browse artifacts across destinations, with the compression/encryption
+pipeline and verification tier per artifact; downloads are allowlisted against the catalog:
+
+![PgKeeper dashboard — backups](docs/images/dashboard-backups.png)
+
+**Retention** — the active policy and exactly what the next prune would delete (a preview;
+the safety rails always apply):
+
+![PgKeeper dashboard — retention](docs/images/dashboard-retention.png)
+
+**Actions** — trigger backup / verify / prune / test-notification / doctor from the
+browser; each needs a CSRF token plus an explicit confirmation. Restores are deliberately
+CLI-only:
+
+![PgKeeper dashboard — actions](docs/images/dashboard-actions.png)
 
 ## Stack
 
