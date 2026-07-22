@@ -70,6 +70,16 @@ storage:
   #   access_key_id: <%= ENV["AWS_ACCESS_KEY_ID"] %>
   #   secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
 
+  # Dropbox (no gem required). Large files stream through an upload session, so
+  # dumps above Dropbox's 150 MB single-request limit upload fine. Use a
+  # refresh-token triple (durable) or a long-lived `access_token`. See
+  # docs/PROVIDERS.md#dropbox for creating the app and minting the token.
+  # - type: dropbox
+  #   root: /pgkeeper            # folder prefix; omit for the app root
+  #   refresh_token: <%= ENV["DROPBOX_REFRESH_TOKEN"] %>
+  #   app_key: <%= ENV["DROPBOX_APP_KEY"] %>
+  #   app_secret: <%= ENV["DROPBOX_APP_SECRET"] %>
+
 # Retention policy, enforced per destination. (Phase 5.)
 retention:
   keep_daily: 7

@@ -3,10 +3,10 @@
 PgKeeper fans every backup out to all configured `storage:` targets. This
 guide walks through credentials and configuration per provider.
 
-Two backends ship today: **local filesystem** and **S3-compatible object
+Three backends ship today: **local filesystem**, **S3-compatible object
 storage** (which covers AWS S3, MinIO, Backblaze B2, Cloudflare R2, and
-DigitalOcean Spaces). The storage layer is a small adapter interface
-(`lib/pgkeeper/storage/base.rb`), so further providers are additive.
+DigitalOcean Spaces), and **Dropbox**. The storage layer is a small adapter
+interface (`lib/pgkeeper/storage/base.rb`), so further providers are additive.
 
 Whatever the provider: run `pgkeeper doctor` afterwards — it health-checks
 every configured destination with a harmless API call and tells you exactly
@@ -123,10 +123,53 @@ with different configs, or simply let one policy apply everywhere.
 Before anything ships to a third-party provider, read the encryption section
 of [SECURITY.md](SECURITY.md).
 
-## Google Drive / Dropbox / SharePoint
+## Dropbox
+
+No SDK required — the adapter talks to the Dropbox HTTP API v2 directly. Large
+artifacts stream through an upload session, so dumps above Dropbox's 150 MB
+single-request ceiling upload fine.
+
+```yaml
+storage:
+  - type: dropbox
+    root: /pgkeeper                                  # folder prefix; omit for the app root
+    refresh_token: <%= ENV["DROPBOX_REFRESH_TOKEN"] %>
+    app_key: <%= ENV["DROPBOX_APP_KEY"] %>
+    app_secret: <%= ENV["DROPBOX_APP_SECRET"] %>
+```
+
+**Set up an app and a refresh token:**
+
+1. At <https://www.dropbox.com/developers/apps>, create an app. **Scoped
+   access** with the **App folder** access type keeps PgKeeper confined to its
+   own folder (recommended); **Full Dropbox** works too.
+2. On the app's **Permissions** tab, enable `files.content.write`,
+   `files.content.read`, and `files.metadata.read`, then submit.
+3. Note the **App key** and **App secret** from the Settings tab.
+4. Mint a **refresh token** (it doesn't expire, and PgKeeper exchanges it for a
+   short-lived access token per run):
+
+   ```sh
+   # 1. Open this in a browser, approve, copy the one-time code:
+   #    https://www.dropbox.com/oauth2/authorize?client_id=APP_KEY&response_type=code&token_access_type=offline
+   # 2. Exchange the code for a refresh token:
+   curl https://api.dropboxapi.com/oauth2/token \
+     -d code=THE_CODE -d grant_type=authorization_code \
+     -u APP_KEY:APP_SECRET
+   ```
+
+   The JSON response's `refresh_token` is what goes in `DROPBOX_REFRESH_TOKEN`.
+5. Run `pgkeeper doctor` — it calls `/2/check/user` to confirm the token works.
+
+A long-lived `access_token` is also accepted in place of the refresh-token
+triple, but Dropbox now issues short-lived tokens by default, so the refresh
+flow above is the durable choice.
+
+## Google Drive / SharePoint
 
 Not yet implemented. The original plan (PLAN.md Phase 4) sketches them; the
 adapter interface (`upload` / `download` / `list` / `delete` / `healthcheck`)
 plus the shared contract test suite (`test/support/storage_contract.rb`) is
 the template — a new provider is one adapter class and one contract test
-include. Contributions welcome.
+include, as the Dropbox adapter (`lib/pgkeeper/storage/dropbox.rb`)
+demonstrates. Contributions welcome.

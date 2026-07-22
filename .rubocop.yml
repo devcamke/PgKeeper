@@ -26,6 +26,9 @@ Metrics/AbcSize:
 Metrics/ClassLength:
   Max: 250
   Exclude:
+    # Tests accumulate scenarios; a growing case class is expected, in line with
+    # the other size metrics exempted for tests below.
+    - "test/**/*.rb"
     # The Thor CLI aggregates every command plus its presentation helpers; it is
     # the natural place for that surface area to accumulate.
     - "lib/pgkeeper/cli.rb"

@@ -23,6 +23,7 @@ module PgKeeper
     STORAGE_KEYS = {
       "local" => %w[type path],
       "s3" => %w[type bucket region prefix endpoint access_key_id secret_access_key force_path_style],
+      "dropbox" => %w[type root access_token refresh_token app_key app_secret],
       "memory" => %w[type]
     }.freeze
 
@@ -190,7 +191,18 @@ module PgKeeper
         problem("storage[#{idx}] (local) requires a `path`") unless entry["path"].is_a?(String)
       when "s3"
         problem("storage[#{idx}] (s3) requires a `bucket`") unless entry["bucket"].is_a?(String)
+      when "dropbox"
+        validate_dropbox_credentials(entry, idx)
       end
+    end
+
+    # Dropbox needs either a direct access token or a full refresh-token triple.
+    def validate_dropbox_credentials(entry, idx)
+      return if entry["access_token"].is_a?(String)
+      return if %w[refresh_token app_key app_secret].all? { |k| entry[k].is_a?(String) }
+
+      problem("storage[#{idx}] (dropbox) requires `access_token`, " \
+              "or `refresh_token` + `app_key` + `app_secret`")
     end
 
     def build_retention(hash)

@@ -4,6 +4,7 @@ require "pgkeeper/storage/base"
 require "pgkeeper/storage/local"
 require "pgkeeper/storage/memory"
 require "pgkeeper/storage/s3"
+require "pgkeeper/storage/dropbox"
 
 module PgKeeper
   # Storage backends and the factory that builds them from config.
@@ -11,7 +12,7 @@ module PgKeeper
   # A run fans a backup out to every configured target. Building the adapters is
   # separate from using them, so config errors surface up front.
   module Storage
-    TYPES = %w[local s3 memory].freeze
+    TYPES = %w[local s3 dropbox memory].freeze
 
     module_function
 
@@ -23,6 +24,8 @@ module PgKeeper
         Local.new(root: target.fetch("path"), logger: logger)
       when "s3"
         build_s3(target, logger)
+      when "dropbox"
+        build_dropbox(target, logger)
       when "memory"
         Memory.new(logger: logger)
       else
@@ -44,6 +47,17 @@ module PgKeeper
         access_key_id: target["access_key_id"],
         secret_access_key: target["secret_access_key"],
         force_path_style: !!target["force_path_style"],
+        logger: logger
+      )
+    end
+
+    def build_dropbox(target, logger)
+      Dropbox.new(
+        root: target["root"].to_s,
+        access_token: target["access_token"],
+        refresh_token: target["refresh_token"],
+        app_key: target["app_key"],
+        app_secret: target["app_secret"],
         logger: logger
       )
     end

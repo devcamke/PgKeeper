@@ -3,6 +3,29 @@
 All notable changes to PgKeeper. Versions map to the milestones in
 [PLAN.md](PLAN.md).
 
+## Unreleased
+
+### Added
+
+- **Dropbox storage backend** (`type: dropbox`, closing part of the Phase 4
+  cloud-provider gap). No SDK required — it uses the Dropbox HTTP API v2
+  directly. Large artifacts stream through an upload session, so dumps above
+  Dropbox's 150 MB single-request ceiling upload with flat memory. Auth is a
+  refresh-token triple (`refresh_token` + `app_key` + `app_secret`, exchanged
+  for a short-lived access token per run) or a long-lived `access_token`.
+  Health-checked by `pgkeeper doctor` and covered by the shared storage
+  contract. See [docs/PROVIDERS.md](docs/PROVIDERS.md#dropbox).
+
+### Changed
+
+- **S3 uploads now use multipart** (via the SDK transfer manager) for files
+  above 100 MiB, lifting the 5 GiB single-`PutObject` limit that previously
+  made large dumps unstorable; smaller files still go in one request.
+- **Disk preflight is size-aware**: it estimates the live database size
+  (`pg_database_size`) and reserves a multiple of it for the staged pipeline,
+  instead of only enforcing a fixed free-space floor. Falls back to the floor
+  when the size can't be measured.
+
 ## 1.0.0 — 2026-07-22
 
 Phases 9–10: the web dashboard, packaging, and the documentation set —

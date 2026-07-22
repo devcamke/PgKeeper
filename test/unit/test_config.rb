@@ -191,6 +191,32 @@ module PgKeeper
       assert_equal "/data/pgk/backups", config.local_path
     end
 
+    def test_dropbox_storage_with_access_token_accepted
+      config = Config.parse(<<~YAML)
+        storage:
+          - type: dropbox
+            root: /pgkeeper
+            access_token: tok-123
+        databases:
+          - name: app
+      YAML
+
+      assert_equal "dropbox", config.storage.first["type"]
+    end
+
+    def test_dropbox_storage_without_credentials_rejected
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          storage:
+            - type: dropbox
+              root: /pgkeeper
+          databases:
+            - name: app
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("dropbox") && p.include?("access_token") })
+    end
+
     def test_load_missing_file_raises
       assert_raises(ConfigError) { Config.load("/nonexistent/pgkeeper.yml") }
     end

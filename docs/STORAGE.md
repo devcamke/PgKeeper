@@ -73,6 +73,26 @@ existence check:
 `pgkeeper doctor` calls `HeadBucket` to confirm the bucket is reachable with the
 given credentials before you rely on it.
 
+## Dropbox
+
+Needs no gem — the adapter uses the Dropbox HTTP API v2 directly. Large
+artifacts stream through an upload session, lifting the 150 MB single-request
+ceiling so multi-gigabyte dumps upload cleanly.
+
+```yaml
+storage:
+  - type: dropbox
+    root: /pgkeeper                                  # folder prefix; omit for the app root
+    refresh_token: <%= ENV["DROPBOX_REFRESH_TOKEN"] %>
+    app_key: <%= ENV["DROPBOX_APP_KEY"] %>
+    app_secret: <%= ENV["DROPBOX_APP_SECRET"] %>
+```
+
+A long-lived `access_token` is accepted in place of the refresh-token triple.
+See [PROVIDERS.md](PROVIDERS.md#dropbox) for creating the app and minting a
+refresh token. `pgkeeper doctor` calls `/2/check/user` to confirm the token
+works.
+
 ## Verifying a destination
 
 ```sh
@@ -82,7 +102,7 @@ pgkeeper list   -c pgkeeper.yml     # what's stored, with verification status
 
 ## Roadmap
 
-Google Drive, Dropbox, and SharePoint/OneDrive backends are planned. The storage
-interface (`upload` / `download` / `list` / `delete` / `healthcheck` with retry +
-backoff) is shared and contract-tested, so adding a provider is additive — see
-`lib/pgkeeper/storage/`.
+Google Drive and SharePoint/OneDrive backends are planned. The storage interface
+(`upload` / `download` / `list` / `delete` / `healthcheck` with retry + backoff)
+is shared and contract-tested, so adding a provider is additive — the Dropbox
+adapter (`lib/pgkeeper/storage/dropbox.rb`) is a worked example.
