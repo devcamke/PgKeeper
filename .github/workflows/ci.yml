@@ -23,6 +23,8 @@ jobs:
         run: mise exec -- bundle install
       - name: RuboCop
         run: mise exec -- bundle exec rake lint
+      - name: Build gem (packaging sanity)
+        run: mise exec -- gem build pgkeeper.gemspec
 
   test:
     runs-on: ubuntu-latest
