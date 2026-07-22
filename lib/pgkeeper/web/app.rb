@@ -6,6 +6,7 @@ require "openssl"
 require "securerandom"
 require "tempfile"
 
+require "pgkeeper/web/api"
 require "pgkeeper/web/view_helpers"
 
 module PgKeeper
@@ -15,6 +16,8 @@ module PgKeeper
     # artifact download endpoint. Authentication happens before any request
     # reaches this class — see {Auth}.
     class App
+      include Api
+
       VIEWS = File.expand_path("views", __dir__)
 
       attr_reader :jobs, :csrf_token
@@ -68,6 +71,9 @@ module PgKeeper
         case request.path_info
         when "/api/status" then json_response(@dashboard.api_status)
         when "/api/runs" then api_runs(request)
+        when "/api/destinations" then json_response(api_destinations)
+        when "/api/jobs" then json_response({ "jobs" => @jobs.all.map { |j| job_json(j) } })
+        when %r{\A/api/jobs/(\d+)\z} then api_job_status(Regexp.last_match(1).to_i)
         when "/metrics" then metrics_response
         else not_found
         end
@@ -79,12 +85,18 @@ module PgKeeper
         [200, { "content-type" => Metrics::CONTENT_TYPE }, [Metrics.render(@config, logger: @logger)]]
       end
 
-      # Every mutating route requires the CSRF token and an explicit
-      # confirmation checkbox — a stray click or a forged form does nothing.
+      # POST splits two ways. The JSON action API (/api/actions/*) is for remote
+      # triggering — scripts, webhooks, a phone shortcut — and is guarded by the
+      # Bearer token alone. The HTML form routes are for the browser and require
+      # the CSRF token plus an explicit confirmation checkbox, so a stray click
+      # or a forged cross-site form can never start anything.
       def dispatch_post(request)
+        return dispatch_api_post(request) if request.path_info.start_with?("/api/")
+
         return forbidden("invalid or missing CSRF token") unless csrf_ok?(request)
         return redirect_msg("confirmation checkbox is required — nothing was started") unless confirmed?(request)
 
+        @logger.info("dashboard action requested", caller: caller_name(request), action: request.path_info)
         case request.path_info
         when "/actions/backup" then act_backup(request)
         when "/actions/verify" then act_verify(request)
@@ -134,6 +146,7 @@ module PgKeeper
         html render_view("actions", title: "Actions",
                                     message: presence(request.params["msg"]),
                                     database_names: @config.databases.map(&:name),
+                                    destinations: @config.destinations,
                                     jobs: @jobs.all)
       end
 
@@ -148,7 +161,15 @@ module PgKeeper
 
       def act_backup(request)
         only = presence(request.params["database"])&.then { |name| [name] }
-        act(only ? "backup #{only.first}" : "backup") { @actions.backup(only: only) }
+        destinations = presence_list(request.params["destinations"])
+        act(backup_label(only, destinations)) { @actions.backup(only: only, destinations: destinations) }
+      end
+
+      def backup_label(only, destinations)
+        parts = ["backup"]
+        parts << only.first if only
+        parts << "→ #{destinations.join(',')}" if destinations
+        parts.join(" ")
       end
 
       def act_verify(request)
@@ -254,8 +275,8 @@ module PgKeeper
         [status, { "content-type" => "text/html; charset=utf-8" }, [body]]
       end
 
-      def json_response(payload)
-        [200, { "content-type" => "application/json" }, [JSON.generate(payload)]]
+      def json_response(payload, status: 200)
+        [status, { "content-type" => "application/json" }, [JSON.generate(payload)]]
       end
 
       def redirect_msg(message)
@@ -272,6 +293,14 @@ module PgKeeper
 
       def presence(value)
         value.nil? || value.to_s.empty? ? nil : value.to_s
+      end
+
+      # Normalize a destination selector param — an array (checkboxes), a
+      # comma-separated string, or nil — into an array of tokens, or nil for
+      # "all destinations".
+      def presence_list(value)
+        list = Array(value).flat_map { |v| v.to_s.split(",") }.map(&:strip).reject(&:empty?)
+        list.empty? ? nil : list
       end
     end
   end

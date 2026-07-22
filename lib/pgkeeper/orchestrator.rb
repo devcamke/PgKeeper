@@ -72,12 +72,14 @@ module PgKeeper
     end
 
     # Run backups for the selected databases (all, or the subset named in
-    # +only+). Returns a {RunReport}.
-    def run(only: nil)
+    # +only+), fanning out to the selected destinations (all, or the subset
+    # named in +destinations+ by their friendly name or type). Returns a
+    # {RunReport}.
+    def run(only: nil, destinations: nil)
       started_at = @clock.now.utc
       run_identifier = run_id
       databases = select_databases(only)
-      run_logger = start_run(databases, run_identifier)
+      run_logger = start_run(databases, run_identifier, destinations)
 
       report = Lock.acquire(File.join(@config.workdir, ".pgkeeper.lock")) do
         RunReport.new(results: databases.map { |db| backup_database(db, @config.workdir, run_logger) })
@@ -92,8 +94,10 @@ module PgKeeper
     private
 
     # Build the run's adapters/encryptor, ensure the workdir, and log the start.
-    def start_run(databases, run_identifier)
-      @adapters = Storage.build_all(@config.storage, logger: @logger)
+    # +destinations+ (nil for all) narrows the fan-out to a chosen subset.
+    def start_run(databases, run_identifier, destinations = nil)
+      targets = Storage.select(@config.storage, destinations)
+      @adapters = Storage.build_all(targets, logger: @logger)
       @encryptor = Crypto.build(@config.encryption)
       ensure_workdir
       run_logger = @logger.with(run: run_identifier)

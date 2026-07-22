@@ -16,7 +16,7 @@ module PgKeeper
         @store = {}
       end
 
-      def name = "memory"
+      def default_name = "memory"
       def healthcheck = true
 
       private

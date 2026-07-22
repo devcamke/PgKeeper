@@ -18,10 +18,51 @@ module PgKeeper
 
     module_function
 
-    # Build a single adapter from one +storage:+ entry.
+    # Build a single adapter from one +storage:+ entry. A friendly +name:+ on
+    # the entry becomes the adapter's {Base#name}, so run history and
+    # destination selection speak the operator's vocabulary ("nas", "gdrive")
+    # rather than the backend's internal path.
     def build(target, logger: PgKeeper.logger)
-      type = target["type"].to_s
-      case type
+      adapter = build_adapter(target, logger)
+      name = target["name"].to_s
+      adapter.display_name = name unless name.strip.empty?
+      adapter
+    end
+
+    # Build every configured adapter, in order.
+    def build_all(targets, logger: PgKeeper.logger)
+      Array(targets).map { |t| build(t, logger: logger) }
+    end
+
+    # Resolve a list of destination selectors to the subset of +targets+ they
+    # name. Each selector matches a target by its friendly +name:+ or by its
+    # +type:+. An empty/nil selector list means "every destination" (the
+    # default fan-out). A selector that matches nothing raises, listing what is
+    # available — a typo must fail loudly, never silently skip a destination.
+    def select(targets, selectors)
+      wanted = Array(selectors).flat_map { |s| s.to_s.split(",") }.map(&:strip).reject(&:empty?)
+      return Array(targets) if wanted.empty?
+
+      chosen = []
+      wanted.each do |selector|
+        matches = Array(targets).select { |t| t["name"].to_s == selector || t["type"].to_s == selector }
+        if matches.empty?
+          raise Error, "unknown destination #{selector.inspect}; available: #{tokens(targets).join(', ')}"
+        end
+
+        chosen.concat(matches)
+      end
+      chosen.uniq
+    end
+
+    # The tokens (friendly name, else type) that {.select} accepts, in config
+    # order — handy for building pickers and error messages.
+    def tokens(targets)
+      Array(targets).map { |t| t["name"].to_s.empty? ? t["type"].to_s : t["name"].to_s }
+    end
+
+    def build_adapter(target, logger)
+      case (type = target["type"].to_s)
       when "local"
         Local.new(root: target.fetch("path"), logger: logger)
       when "s3"
@@ -37,11 +78,6 @@ module PgKeeper
       else
         raise ConfigError, "unknown storage type: #{type.inspect} (expected one of #{TYPES.join(', ')})"
       end
-    end
-
-    # Build every configured adapter, in order.
-    def build_all(targets, logger: PgKeeper.logger)
-      Array(targets).map { |t| build(t, logger: logger) }
     end
 
     def build_s3(target, logger)

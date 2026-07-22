@@ -13,6 +13,11 @@ Whatever the provider: run `pgkeeper doctor` afterwards — it health-checks
 every configured destination with a harmless API call and tells you exactly
 which one is misconfigured.
 
+Any target can carry an optional `name:` (e.g. `nas`, `gdrive`, `onedrive`) —
+a friendly alias that labels the destination in run history and lets you scope
+a single run to it with `pgkeeper backup --destinations <name>` or the web API.
+See [REMOTE-API.md](REMOTE-API.md).
+
 ## Local filesystem
 
 ```yaml

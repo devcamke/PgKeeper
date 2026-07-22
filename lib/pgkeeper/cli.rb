@@ -39,13 +39,29 @@ module PgKeeper
           "#{config.storage.length} storage target(s))", :green
     end
 
-    desc "backup", "Dump configured databases to local storage with manifests"
+    desc "backup", "Dump configured databases and fan out to storage destinations"
     method_option :only, type: :array, desc: "Only back up these database name(s)"
+    method_option :destinations, type: :array,
+                                 desc: "Only ship to these destination(s), by name or type (default: all)"
     def backup
       config = load_config
-      report = Orchestrator.new(config, logger: logger).run(only: options[:only])
+      report = Orchestrator.new(config, logger: logger)
+                           .run(only: options[:only], destinations: options[:destinations])
       print_report(report)
       exit(report.exit_code)
+    rescue Error => e
+      say_error e.message, :red
+      exit(ExitCode::FAILURE)
+    end
+
+    desc "destinations", "List configured storage destinations and the tokens that select them"
+    def destinations
+      config = load_config
+      say "Destinations (use with `backup --destinations TOKEN`):", :cyan
+      config.destinations.each do |dest|
+        token = dest.token
+        say format("  %<token>-16s %<label>s", token: token, label: dest.label)
+      end
     end
 
     desc "list", "List backups across every configured destination"

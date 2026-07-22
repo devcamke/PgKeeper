@@ -20,13 +20,15 @@ module PgKeeper
     NOTIFY_EVENTS = %w[success failure].freeze
 
     # Allowed keys per storage backend type, for strict validation.
+    # Every type also accepts an optional friendly `name` (an alias used to
+    # select the destination for a run and to label it in history).
     STORAGE_KEYS = {
-      "local" => %w[type path],
-      "s3" => %w[type bucket region prefix endpoint access_key_id secret_access_key force_path_style],
-      "dropbox" => %w[type root access_token refresh_token app_key app_secret],
-      "google_drive" => %w[type folder_id credentials_json credentials_file],
-      "sharepoint" => %w[type drive_id tenant_id client_id client_secret root],
-      "memory" => %w[type]
+      "local" => %w[type name path],
+      "s3" => %w[type name bucket region prefix endpoint access_key_id secret_access_key force_path_style],
+      "dropbox" => %w[type name root access_token refresh_token app_key app_secret],
+      "google_drive" => %w[type name folder_id credentials_json credentials_file],
+      "sharepoint" => %w[type name drive_id tenant_id client_id client_secret root],
+      "memory" => %w[type name]
     }.freeze
 
     DEFAULT_WORKDIR = "/var/backups/pgkeeper"
@@ -115,6 +117,20 @@ module PgKeeper
     def local_path
       target = @storage.find { |s| s["type"] == "local" }
       target && target["path"]
+    end
+
+    # One selectable {Destination} per configured storage target. +token+ is
+    # what `pgkeeper backup --destinations` and the web API accept to scope a
+    # run to that destination; +label+ is for humans (pickers, docs).
+    Destination = Struct.new(:token, :label, :type, :name, keyword_init: true)
+
+    def destinations
+      @storage.map do |target|
+        name = target["name"].to_s
+        token = name.empty? ? target["type"].to_s : name
+        label = name.empty? ? target["type"].to_s : "#{name} (#{target['type']})"
+        Destination.new(token: token, label: label, type: target["type"], name: (name unless name.empty?))
+      end
     end
 
     private
@@ -241,7 +257,27 @@ module PgKeeper
         return default_storage
       end
 
-      list.each_with_index.filter_map { |entry, idx| build_storage_target(entry, idx) }
+      targets = list.each_with_index.filter_map { |entry, idx| build_storage_target(entry, idx) }
+      validate_storage_names(targets)
+      targets
+    end
+
+    # Friendly `name:` aliases must be unique and must not shadow a storage
+    # type keyword — both would make destination selection ambiguous.
+    def validate_storage_names(targets)
+      seen = {}
+      targets.each_with_index do |target, idx|
+        name = target["name"]
+        next if name.nil?
+
+        unless name.is_a?(String) && !name.strip.empty?
+          problem("storage[#{idx}] `name` must be a non-empty string")
+          next
+        end
+        problem("storage[#{idx}] `name` #{name.inspect} collides with a storage type") if STORAGE_KEYS.key?(name)
+        problem("duplicate storage name #{name.inspect}") if seen[name]
+        seen[name] = true
+      end
     end
 
     def default_storage
@@ -403,9 +439,23 @@ module PgKeeper
       return if auth.nil?
       return problem("web.auth must be a mapping") unless auth.is_a?(Hash)
 
-      reject_unknown_keys(auth, %w[token username password], "web.auth")
-      auth.each do |key, value|
+      reject_unknown_keys(auth, %w[token tokens username password], "web.auth")
+      %w[token username password].each do |key|
+        value = auth[key]
         problem("web.auth.#{key} must be a string") unless value.nil? || value.is_a?(String)
+      end
+      validate_web_auth_tokens(auth["tokens"])
+    end
+
+    # `tokens:` is a map of caller name => secret, so each caller can be revoked
+    # on its own. Names must be non-empty and secrets must be strings.
+    def validate_web_auth_tokens(tokens)
+      return if tokens.nil?
+      return problem("web.auth.tokens must be a mapping of name => token") unless tokens.is_a?(Hash)
+
+      tokens.each do |name, secret|
+        problem("web.auth.tokens has an empty token name") if name.to_s.strip.empty?
+        problem("web.auth.tokens.#{name} must be a string") unless secret.is_a?(String)
       end
     end
 

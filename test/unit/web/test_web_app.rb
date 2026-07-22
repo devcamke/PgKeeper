@@ -186,7 +186,7 @@ module PgKeeper
       assert_equal 303, last_response.status
       wait_for_jobs(@app)
 
-      assert_equal [[:backup, { only: ["app"] }]], @actions.calls
+      assert_equal [[:backup, { only: ["app"], destinations: nil }]], @actions.calls
       job = @app.jobs.all.first
 
       assert_predicate job, :done?

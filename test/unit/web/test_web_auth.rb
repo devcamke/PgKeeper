@@ -89,6 +89,87 @@ module PgKeeper
       assert_equal 401, last_response.status
     end
 
+    def test_named_tokens_each_authorize_independently
+      @app = Web::Auth.new(OK_APP, tokens: { "ci" => "tok-ci", "bot" => "tok-bot" })
+
+      header "Authorization", "Bearer tok-ci"
+      get "/"
+
+      assert_equal 200, last_response.status
+
+      header "Authorization", "Bearer tok-bot"
+      get "/"
+
+      assert_equal 200, last_response.status
+
+      header "Authorization", "Bearer tok-revoked"
+      get "/"
+
+      assert_equal 401, last_response.status
+    end
+
+    def test_named_token_records_the_caller_for_audit
+      captured = nil
+      spy = lambda do |env|
+        captured = env[Web::Auth::CALLER_KEY]
+        [200, {}, [""]]
+      end
+      @app = Web::Auth.new(spy, tokens: { "ci" => "tok-ci" })
+
+      header "Authorization", "Bearer tok-ci"
+      get "/"
+
+      assert_equal "ci", captured, "the authenticating token's name is recorded on the request"
+    end
+
+    def test_single_token_and_named_tokens_coexist
+      @app = Web::Auth.new(OK_APP, token: "legacy", tokens: { "ci" => "tok-ci" })
+
+      header "Authorization", "Bearer legacy"
+      get "/"
+
+      assert_equal 200, last_response.status
+
+      header "Authorization", "Bearer tok-ci"
+      get "/"
+
+      assert_equal 200, last_response.status
+    end
+
+    def test_revoking_a_token_is_dropping_its_entry
+      # "bot" is gone from config; its holder can no longer authenticate while
+      # "ci" keeps working — the whole point of per-caller tokens.
+      @app = Web::Auth.new(OK_APP, tokens: { "ci" => "tok-ci" })
+
+      header "Authorization", "Bearer tok-bot"
+      get "/"
+
+      assert_equal 401, last_response.status
+
+      header "Authorization", "Bearer tok-ci"
+      get "/"
+
+      assert_equal 200, last_response.status
+    end
+
+    def test_named_token_works_as_basic_auth_password_too
+      @app = Web::Auth.new(OK_APP, tokens: { "ci" => "tok-ci" })
+
+      basic_authorize "anything", "tok-ci"
+      get "/"
+
+      assert_equal 200, last_response.status
+    end
+
+    def test_boots_with_only_named_tokens
+      # No single token, no basic-auth pair — a tokens map alone is enough.
+      Web::Auth.new(OK_APP, tokens: { "ci" => "tok-ci" })
+    end
+
+    def test_refuses_to_boot_with_an_empty_tokens_map
+      assert_raises(EnvironmentError) { Web::Auth.new(OK_APP, tokens: {}) }
+    end
+
     # The full matrix: every dashboard route — pages, API, and actions —
     # 401s without credentials. No unauthenticated surface, ever.
     def test_every_route_requires_auth
@@ -106,6 +187,33 @@ module PgKeeper
 
           assert_equal 401, last_response.status, "expected POST #{path} to 401 without credentials"
         end
+      end
+    end
+
+    def test_build_wires_named_tokens_and_drops_blank_secrets
+      in_tmpdir do |dir|
+        config = Config.parse(<<~YAML)
+          workdir: #{dir}
+          databases:
+            - name: app
+          web:
+            auth:
+              tokens:
+                ci: real-token
+                unset: ""
+        YAML
+        @app = Web.build(config, logger: null_logger)
+
+        header "Authorization", "Bearer real-token"
+        get "/"
+
+        assert_equal 200, last_response.status
+
+        # An unset env var collapses to a blank secret; it must never authorize.
+        header "Authorization", "Bearer "
+        get "/"
+
+        assert_equal 401, last_response.status
       end
     end
 
