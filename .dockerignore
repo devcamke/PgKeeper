@@ -1,0 +1,18 @@
+.git
+.github
+tmp
+pkg
+coverage
+*.gem
+Gemfile.lock
+.bundle
+vendor/bundle
+# Never bake secrets or local runtime state into the image.
+pgkeeper.yml
+config/pgkeeper.yml
+*.dump
+*.sql
+*.manifest.json
+history.sqlite3
+.pgkeeper.lock
+.pgkeeper-staging-*
