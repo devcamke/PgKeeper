@@ -10,6 +10,13 @@
 # Where PgKeeper stages work and (by default) keeps local backups.
 workdir: /var/backups/pgkeeper
 
+# When to run backups. Accepts cron ("15 3 * * *"), natural language
+# ("every day at 03:15", "every monday at 9am"), or shorthands
+# ("hourly", "daily at 03:15", "weekly on sunday at 04:00"). A per-database
+# `schedule:` overrides this for that database. Drive it with cron/systemd via
+# `pgkeeper schedule install`, or run `pgkeeper daemon` in a container.
+schedule: daily at 03:15
+
 # Settings applied to every database unless the database overrides them.
 defaults:
   host: localhost

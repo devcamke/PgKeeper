@@ -8,11 +8,12 @@ SharePoint/OneDrive, S3-compatible), enforces retention policies, verifies that 
 are actually restorable, reports status via email, and includes an optional web dashboard
 (`pgkeeper web`) for monitoring backup health and triggering runs.
 
-**Status:** v0.7 (Phases 0–7) is implemented and tested — backups are compressed,
+**Status:** v0.8 (Phases 0–8) is implemented and tested — backups are compressed,
 optionally encrypted, fanned out to multiple destinations, pruned by a retention policy,
-**verifiably restorable**, and now **reported on** via run-history, email/webhook alerts,
-and a dead-man's switch. See [PLAN.md](PLAN.md) for the full multi-phase build plan and
-[docs/RESTORE.md](docs/RESTORE.md) for the restore runbook.
+**verifiably restorable**, **reported on** (run-history, email/webhook alerts, dead-man's
+switch), and **scheduled** (cron/systemd installers or a built-in daemon). See
+[PLAN.md](PLAN.md) for the full multi-phase build plan and [docs/RESTORE.md](docs/RESTORE.md)
+for the restore runbook.
 
 ## What works today
 
@@ -55,6 +56,12 @@ and a dead-man's switch. See [PLAN.md](PLAN.md) for the full multi-phase build p
   triggers), a generic/Slack **webhook**, and a **dead-man's-switch** ping so a monitor
   catches a cron that silently never ran. Notifier failures are logged and never affect
   the backup itself.
+- **Scheduling** — set a `schedule:` (cron, natural language, or shorthands like
+  `daily at 03:15`), globally or per-database. `pgkeeper schedule install` emits
+  **flock-guarded crontab lines** or **systemd service+timer units** (with
+  `RandomizedDelaySec` stagger and `Persistent=true` catch-up); `pgkeeper schedule print`
+  shows the resolved plan. For containers without cron/systemd, `pgkeeper daemon` runs the
+  schedules in-process with jitter.
 
 Meaningful exit codes throughout: `0` success, `1` partial (some destinations/databases
 failed), `2` total failure. Every run is recorded to a SQLite history store that powers
