@@ -24,6 +24,7 @@ module PgKeeper
       "local" => %w[type path],
       "s3" => %w[type bucket region prefix endpoint access_key_id secret_access_key force_path_style],
       "dropbox" => %w[type root access_token refresh_token app_key app_secret],
+      "google_drive" => %w[type folder_id credentials_json credentials_file],
       "memory" => %w[type]
     }.freeze
 
@@ -193,6 +194,8 @@ module PgKeeper
         problem("storage[#{idx}] (s3) requires a `bucket`") unless entry["bucket"].is_a?(String)
       when "dropbox"
         validate_dropbox_credentials(entry, idx)
+      when "google_drive"
+        validate_google_drive(entry, idx)
       end
     end
 
@@ -203,6 +206,15 @@ module PgKeeper
 
       problem("storage[#{idx}] (dropbox) requires `access_token`, " \
               "or `refresh_token` + `app_key` + `app_secret`")
+    end
+
+    # Google Drive needs the target folder plus service-account credentials,
+    # supplied inline or as a file path.
+    def validate_google_drive(entry, idx)
+      problem("storage[#{idx}] (google_drive) requires a `folder_id`") unless entry["folder_id"].is_a?(String)
+      return if entry["credentials_json"].is_a?(String) || entry["credentials_file"].is_a?(String)
+
+      problem("storage[#{idx}] (google_drive) requires `credentials_json` or `credentials_file`")
     end
 
     def build_retention(hash)

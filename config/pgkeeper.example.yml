@@ -80,6 +80,14 @@ storage:
   #   app_key: <%= ENV["DROPBOX_APP_KEY"] %>
   #   app_secret: <%= ENV["DROPBOX_APP_SECRET"] %>
 
+  # Google Drive (no gem required). Backups land in one folder shared with a
+  # service account; large files stream through a resumable session. See
+  # docs/PROVIDERS.md#google-drive for the service-account + folder setup.
+  # - type: google_drive
+  #   folder_id: <%= ENV["GDRIVE_FOLDER_ID"] %>
+  #   credentials_file: /etc/pgkeeper/service-account.json
+  #   # credentials_json: <%= ENV["GDRIVE_SERVICE_ACCOUNT_JSON"] %>   # inline alternative
+
 # Retention policy, enforced per destination. (Phase 5.)
 retention:
   keep_daily: 7

@@ -3,10 +3,11 @@
 PgKeeper fans every backup out to all configured `storage:` targets. This
 guide walks through credentials and configuration per provider.
 
-Three backends ship today: **local filesystem**, **S3-compatible object
+Four backends ship today: **local filesystem**, **S3-compatible object
 storage** (which covers AWS S3, MinIO, Backblaze B2, Cloudflare R2, and
-DigitalOcean Spaces), and **Dropbox**. The storage layer is a small adapter
-interface (`lib/pgkeeper/storage/base.rb`), so further providers are additive.
+DigitalOcean Spaces), **Dropbox**, and **Google Drive**. The storage layer is a
+small adapter interface (`lib/pgkeeper/storage/base.rb`), so further providers
+are additive.
 
 Whatever the provider: run `pgkeeper doctor` afterwards — it health-checks
 every configured destination with a harmless API call and tells you exactly
@@ -165,11 +166,46 @@ A long-lived `access_token` is also accepted in place of the refresh-token
 triple, but Dropbox now issues short-lived tokens by default, so the refresh
 flow above is the durable choice.
 
-## Google Drive / SharePoint
+## Google Drive
 
-Not yet implemented. The original plan (PLAN.md Phase 4) sketches them; the
+No SDK required — the adapter talks to the Drive REST API v3 directly and signs
+its own service-account JWT. Each backup is stored as a file whose name is the
+full path (e.g. `db/app-2026.dump`) inside one folder you control; large
+artifacts stream through a resumable upload session, so dumps above the simple
+100 MB upload limit go through fine.
+
+```yaml
+storage:
+  - type: google_drive
+    folder_id: <%= ENV["GDRIVE_FOLDER_ID"] %>          # the folder's ID from its URL
+    credentials_file: /etc/pgkeeper/service-account.json
+    # or inline the key JSON from an env var instead of a file:
+    # credentials_json: <%= ENV["GDRIVE_SERVICE_ACCOUNT_JSON"] %>
+```
+
+**Set up a service account and folder:**
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create (or
+   pick) a project and **enable the Google Drive API**.
+2. Create a **service account**, then add a **JSON key** — download it; this is
+   the `credentials_file` (it contains `client_email` and `private_key`).
+3. In Google Drive, create the destination folder. **Share it with the service
+   account's email** (the `client_email` from the key) and grant **Editor**.
+   PgKeeper only ever touches this folder.
+4. Copy the folder's ID from its URL
+   (`https://drive.google.com/drive/folders/<FOLDER_ID>`) into `folder_id`.
+5. Run `pgkeeper doctor` — it fetches the folder's metadata to confirm the
+   credentials and access are good.
+
+> Store the key JSON as a secret, not in the repo. Either point
+> `credentials_file` at a file deployed out-of-band, or feed the whole JSON
+> through `credentials_json` from an environment variable.
+
+## SharePoint / OneDrive
+
+Not yet implemented. The original plan (PLAN.md Phase 4) sketches it; the
 adapter interface (`upload` / `download` / `list` / `delete` / `healthcheck`)
 plus the shared contract test suite (`test/support/storage_contract.rb`) is
 the template — a new provider is one adapter class and one contract test
-include, as the Dropbox adapter (`lib/pgkeeper/storage/dropbox.rb`)
-demonstrates. Contributions welcome.
+include, as the Dropbox and Google Drive adapters
+(`lib/pgkeeper/storage/`) demonstrate. Contributions welcome.

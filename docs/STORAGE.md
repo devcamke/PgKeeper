@@ -93,6 +93,24 @@ See [PROVIDERS.md](PROVIDERS.md#dropbox) for creating the app and minting a
 refresh token. `pgkeeper doctor` calls `/2/check/user` to confirm the token
 works.
 
+## Google Drive
+
+Needs no gem — the adapter uses the Drive REST API v3 and signs its own
+service-account JWT. Backups land in one folder you share with the service
+account; large files stream through a resumable upload session.
+
+```yaml
+storage:
+  - type: google_drive
+    folder_id: <%= ENV["GDRIVE_FOLDER_ID"] %>
+    credentials_file: /etc/pgkeeper/service-account.json
+    # credentials_json: <%= ENV["GDRIVE_SERVICE_ACCOUNT_JSON"] %>   # inline alternative
+```
+
+See [PROVIDERS.md](PROVIDERS.md#google-drive) for creating the service account,
+enabling the Drive API, and sharing the folder. `pgkeeper doctor` fetches the
+folder's metadata to confirm access.
+
 ## Verifying a destination
 
 ```sh
@@ -102,7 +120,7 @@ pgkeeper list   -c pgkeeper.yml     # what's stored, with verification status
 
 ## Roadmap
 
-Google Drive and SharePoint/OneDrive backends are planned. The storage interface
-(`upload` / `download` / `list` / `delete` / `healthcheck` with retry + backoff)
-is shared and contract-tested, so adding a provider is additive — the Dropbox
-adapter (`lib/pgkeeper/storage/dropbox.rb`) is a worked example.
+A SharePoint/OneDrive backend is planned. The storage interface (`upload` /
+`download` / `list` / `delete` / `healthcheck` with retry + backoff) is shared
+and contract-tested, so adding a provider is additive — the Dropbox and Google
+Drive adapters (`lib/pgkeeper/storage/`) are worked examples.

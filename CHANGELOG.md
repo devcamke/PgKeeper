@@ -15,6 +15,14 @@ All notable changes to PgKeeper. Versions map to the milestones in
   for a short-lived access token per run) or a long-lived `access_token`.
   Health-checked by `pgkeeper doctor` and covered by the shared storage
   contract. See [docs/PROVIDERS.md](docs/PROVIDERS.md#dropbox).
+- **Google Drive storage backend** (`type: google_drive`, closing more of the
+  Phase 4 gap). No SDK required — it uses the Drive REST API v3 directly and
+  signs its own service-account JWT (`credentials_json` inline or a
+  `credentials_file` path). Each artifact is stored as a file named for its
+  full path inside one shared folder (`folder_id`); large files stream through
+  a resumable upload session. Health-checked by `pgkeeper doctor` and covered
+  by the shared storage contract. See
+  [docs/PROVIDERS.md](docs/PROVIDERS.md#google-drive).
 
 ### Changed
 
