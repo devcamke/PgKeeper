@@ -24,8 +24,6 @@ Gem::Specification.new do |spec|
     "config/*.example.yml",
     "docs/*.md",
     "README.md",
-    "PLAN.md",
-    "CHANGELOG.md",
     "LICENSE*"
   ]
   spec.bindir      = "bin"
@@ -34,7 +32,7 @@ Gem::Specification.new do |spec|
 
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/devcamke/pgkeeper"
-  spec.metadata["changelog_uri"] = "https://github.com/devcamke/pgkeeper/blob/main/CHANGELOG.md"
+  spec.metadata["changelog_uri"] = "https://github.com/devcamke/pgkeeper/blob/main/docs/CHANGELOG.md"
   spec.metadata["bug_tracker_uri"] = "https://github.com/devcamke/pgkeeper/issues"
 
   spec.add_dependency "thor", "~> 1.3"

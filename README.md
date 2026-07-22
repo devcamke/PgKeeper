@@ -12,13 +12,13 @@ are actually restorable, reports status via email, and includes an optional web 
 optionally encrypted, fanned out to multiple destinations, pruned by a retention policy,
 **verifiably restorable**, **reported on** (run-history, email/webhook alerts, dead-man's
 switch), **scheduled** (cron/systemd installers or a built-in daemon), **observable in a
-browser** (`pgkeeper web`), and **deployable with Docker**. See [PLAN.md](PLAN.md) for the
-full multi-phase build plan, [CHANGELOG.md](CHANGELOG.md) for what shipped when, and
-[docs/RESTORE.md](docs/RESTORE.md) for the restore runbook.
+browser** (`pgkeeper web`), and **deployable with Docker**. See [docs/PLAN.md](docs/PLAN.md)
+for the full multi-phase build plan, [docs/CHANGELOG.md](docs/CHANGELOG.md) for what shipped
+when, and [docs/RESTORE.md](docs/RESTORE.md) for the restore runbook.
 
 > **Known gap (by design, documented):** PgKeeper takes logical dumps — there is no WAL
 > archiving / point-in-time recovery, so a restore loses everything since the last dump.
-> Schedule accordingly; PITR guidance is on the post-v1 backlog (PLAN.md Phase 11).
+> Schedule accordingly; PITR guidance is on the post-v1 backlog (docs/PLAN.md Phase 11).
 
 ## How it works
 
@@ -215,7 +215,7 @@ docker compose up -d
   encryption, dashboard hardening.
 - [docs/PROVIDERS.md](docs/PROVIDERS.md) — storage setup for AWS S3, MinIO,
   Backblaze B2, Cloudflare R2, Spaces.
-- [CHANGELOG.md](CHANGELOG.md) — release history mapped to plan phases.
+- [docs/CHANGELOG.md](docs/CHANGELOG.md) — release history mapped to plan phases.
 
 ## Development
 

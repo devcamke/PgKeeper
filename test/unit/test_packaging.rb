@@ -35,7 +35,7 @@ module PgKeeper
       files = gemspec.files
 
       assert_includes files, "lib/pgkeeper.rb"
-      assert_includes files, "CHANGELOG.md"
+      assert_includes files, "docs/CHANGELOG.md"
       assert(files.any? { |f| f.start_with?("docs/") }, "docs should be bundled")
     end
 
