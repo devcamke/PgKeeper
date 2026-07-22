@@ -15,9 +15,10 @@ module PgKeeper
     class PgDumpall
       attr_reader :db
 
-      def initialize(db, logger: PgKeeper.logger)
+      def initialize(db, logger: PgKeeper.logger, timeout: nil)
         @db = db
         @logger = logger
+        @timeout = timeout
       end
 
       def version
@@ -27,7 +28,8 @@ module PgKeeper
       # Dump only the globals to the SQL file at +to+. Returns +to+.
       def dump_globals(to:)
         args = ["--no-password", "--globals-only", "--file=#{to}"]
-        Runner.run!("pg_dumpall", args, env: @db.libpq_env, logger: @logger, label: "pg_dumpall")
+        Runner.run!("pg_dumpall", args, env: @db.libpq_env, logger: @logger,
+                                        label: "pg_dumpall", timeout: @timeout)
         to
       end
     end

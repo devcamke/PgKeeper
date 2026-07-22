@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly run so a dependency CVE disclosed between commits is still caught by
+  # the security job rather than lying dormant until the next push.
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
 
 jobs:
   lint:
@@ -25,6 +32,32 @@ jobs:
         run: mise exec -- bundle exec rake lint
       - name: Build gem (packaging sanity)
         run: mise exec -- gem build pgkeeper.gemspec
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - name: Install dependencies
+        run: mise exec -- bundle install
+      - name: Audit dependencies for known CVEs (bundler-audit)
+        run: |
+          mise exec -- gem install bundler-audit
+          mise exec -- bundle-audit check --update
+
+  # Runs only on PRs: fails the check if a newly-added/updated dependency has a
+  # known vulnerability or a disallowed license, using GitHub's dependency graph.
+  dependency-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
 
   test:
     runs-on: ubuntu-latest
@@ -68,3 +101,22 @@ jobs:
         run: mise exec -- bundle install
       - name: Run tests
         run: mise exec -- bundle exec rake test
+
+  # The gemspec declares `required_ruby_version >= 3.2`; the main test job pins
+  # one version, so this matrix proves the hermetic unit suite actually runs on
+  # every supported Ruby. No Postgres service here — the integration tests skip
+  # without PGKEEPER_TEST_PGHOST, keeping this job fast.
+  compat:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.2", "3.3", "3.4"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+      - name: Run unit tests
+        run: bundle exec rake test:unit

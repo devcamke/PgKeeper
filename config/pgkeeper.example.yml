@@ -98,6 +98,30 @@ storage:
   #   client_secret: <%= ENV["AZURE_CLIENT_SECRET"] %>
   #   root: pgkeeper            # optional folder prefix within the drive
 
+# Wall-clock deadlines (seconds) for the external tools PgKeeper shells out to.
+# Defaults are generous enough never to trip a legitimate operation but finite,
+# so a genuinely hung child (a lock wait, a stalled network mount, a server that
+# accepts the connection but never answers) can't block a run forever with no
+# backup and no failure alert. Set any value to 0 to disable that deadline.
+# timeouts:
+#   dump: 21600      # pg_dump / pg_dumpall (default 6h)
+#   restore: 21600   # pg_restore / psql restore (default 6h)
+#   verify: 3600     # deep-verify restore into a scratch database (default 1h)
+#   query: 60        # short metadata queries: size estimate, guards, SHOW
+
+# Backup-size anomaly detection. A dump that is suddenly far smaller than its
+# recent history is the classic sign of a silently broken backup (a dropped
+# table, a bad exclude, a truncated database) — pg_dump still exits 0, so
+# nothing else catches it. When a fresh dump moves past the threshold vs the
+# median of recent successful runs, PgKeeper logs a loud warning and includes it
+# in the run's notification (the run still succeeds; this is advisory).
+# anomaly:
+#   enabled: true
+#   min_samples: 2     # need at least this many prior successful runs to judge
+#   sample_size: 5     # baseline is the median of the last N successful runs
+#   shrink_pct: 50     # warn when today's dump is >= this % smaller than baseline
+#   grow_pct: 0        # warn when it is this % larger (0 disables growth warnings)
+
 # Retention policy, enforced per destination. (Phase 5.)
 retention:
   keep_daily: 7

@@ -30,11 +30,19 @@ module PgKeeper
 
     # Outcome for a single database. +status+ is :success (dumped and stored
     # everywhere), :partial (dumped, but at least one destination failed), or
-    # :failure (the dump itself failed).
-    Result = Struct.new(:database, :status, :artifacts, :error, :duration_seconds, keyword_init: true) do
+    # :failure (the dump itself failed). +warnings+ carries non-fatal advisories
+    # (e.g. a backup-size anomaly) surfaced in reports and notifications.
+    Result = Struct.new(:database, :status, :artifacts, :error, :duration_seconds, :warnings,
+                        keyword_init: true) do
       def success? = status == :success
       def partial? = status == :partial
       def failure? = status == :failure
+
+      # Lazily-initialized so callers can push advisories without constructing
+      # the array up front.
+      def warnings = self[:warnings] ||= []
+
+      def total_bytes = Array(artifacts).sum { |a| a[:size_bytes].to_i }
     end
 
     # Aggregate outcome for a whole run.
@@ -59,7 +67,8 @@ module PgKeeper
       @config = config
       @logger = logger
       @clock = clock
-      @preflight = Preflight.new(min_free_bytes: min_free_bytes, scratch_factor: scratch_factor)
+      @preflight = Preflight.new(min_free_bytes: min_free_bytes, scratch_factor: scratch_factor,
+                                 query_timeout: config.timeout(:query))
     end
 
     # Run backups for the selected databases (all, or the subset named in
@@ -74,6 +83,7 @@ module PgKeeper
         RunReport.new(results: databases.map { |db| backup_database(db, @config.workdir, run_logger) })
       end
 
+      annotate_anomalies(report, run_logger)
       log_run_finished(report, run_logger)
       finalize_run(report, run_identifier, started_at, run_logger)
       report
@@ -100,7 +110,30 @@ module PgKeeper
                       succeeded: report.succeeded.length,
                       partial: report.partial.length,
                       failed: report.failed.length,
+                      warnings: report.results.sum { |r| r.warnings.length },
                       exit_code: report.exit_code)
+    end
+
+    # Compare each database's fresh dump size against its recent successful runs
+    # and attach a loud advisory when it moves too far — the classic "silently
+    # broken dump" signal. Best-effort: never changes the run's outcome.
+    def annotate_anomalies(report, run_logger)
+      return unless @config.anomaly["enabled"]
+
+      history = History.new(File.join(@config.workdir, "history.sqlite3"), logger: run_logger)
+      report.results.each do |result|
+        next if result.failure? || result.total_bytes.zero?
+
+        sizes = history.recent_success_sizes(result.database, limit: @config.anomaly["sample_size"].to_i)
+        finding = Anomaly.detect(database: result.database, current_bytes: result.total_bytes,
+                                 baseline_sizes: sizes, config: @config.anomaly)
+        next unless finding
+
+        result.warnings << finding.message
+        run_logger.warn("backup size anomaly", db: result.database, **finding.to_log)
+      end
+    rescue StandardError => e
+      run_logger.warn("anomaly check skipped (non-fatal)", error: e.message)
     end
 
     # Persist run history and fire notifications after a run. Both are
@@ -189,7 +222,7 @@ module PgKeeper
     end
 
     def dump_primary(ctx)
-      dumper = Dump::PgDump.new(ctx.db, logger: ctx.log)
+      dumper = Dump::PgDump.new(ctx.db, logger: ctx.log, timeout: @config.timeout(:dump))
       raw = File.join(ctx.staging, "#{ctx.db.slug}-#{ctx.timestamp}.#{dumper.extension}")
       duration = timed { dumper.dump(to: raw) }
       process_artifact(ctx, raw, kind: "database", dump_format: ctx.db.format, duration: duration,
@@ -197,7 +230,7 @@ module PgKeeper
     end
 
     def dump_globals(ctx)
-      dumper = Dump::PgDumpall.new(ctx.db, logger: ctx.log)
+      dumper = Dump::PgDumpall.new(ctx.db, logger: ctx.log, timeout: @config.timeout(:dump))
       raw = File.join(ctx.staging, "#{ctx.db.slug}-globals-#{ctx.timestamp}.sql")
       duration = timed { dumper.dump_globals(to: raw) }
       process_artifact(ctx, raw, kind: "globals", dump_format: "plain", duration: duration,
@@ -288,9 +321,10 @@ module PgKeeper
     end
 
     def server_version(db)
-      out, status = Open3.capture2e(db.libpq_env, "psql", "-XtAc", "SHOW server_version")
+      out, _err, status = Subprocess.capture3(db.libpq_env, "psql", "-XtAc", "SHOW server_version",
+                                              timeout: @config.timeout(:query))
       status.success? ? out.strip : nil
-    rescue Errno::ENOENT
+    rescue EnvironmentError, TimeoutError
       nil
     end
 

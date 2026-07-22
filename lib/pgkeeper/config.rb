@@ -31,8 +31,31 @@ module PgKeeper
 
     DEFAULT_WORKDIR = "/var/backups/pgkeeper"
 
+    # Wall-clock deadlines (seconds) for the external tools PgKeeper shells out
+    # to. Generous by default so a legitimate large dump never trips them, but
+    # finite so a genuinely hung child can't block a run forever. A value of 0
+    # disables the deadline for that class of command.
+    DEFAULT_TIMEOUTS = {
+      "dump" => 21_600,    # pg_dump / pg_dumpall (6h)
+      "restore" => 21_600, # pg_restore / psql restore (6h)
+      "verify" => 3_600,   # deep-verify restore into a scratch database (1h)
+      "query" => 60        # short metadata queries: size estimate, guards, SHOW (60s)
+    }.freeze
+
+    # Backup-size anomaly detection defaults. A dump that is suddenly far
+    # smaller than its recent history is the classic sign of a silently broken
+    # backup (a dropped table, a bad --exclude, a half-empty database).
+    DEFAULT_ANOMALY = {
+      "enabled" => true,
+      "min_samples" => 2,  # need at least this many prior successful runs to judge
+      "sample_size" => 5,  # baseline is the median of the last N successful runs
+      "shrink_pct" => 50,  # warn when today's dump is >= this % smaller than baseline
+      "grow_pct" => 0      # warn when it is this % larger (0 disables growth warnings)
+    }.freeze
+
     attr_reader :source, :raw, :databases, :storage, :retention,
-                :compression, :encryption, :notifications, :workdir, :schedule, :web
+                :compression, :encryption, :notifications, :workdir, :schedule, :web,
+                :timeouts, :anomaly
 
     # Load and validate config from a YAML file path.
     def self.load(path, env: ENV)
@@ -81,6 +104,13 @@ module PgKeeper
       @databases.find { |db| db.name == name }
     end
 
+    # The deadline (seconds) for a class of command (:dump, :restore, :verify,
+    # :query), or nil when disabled (a configured 0).
+    def timeout(kind)
+      value = @timeouts[kind.to_s]
+      value&.positive? ? value : nil
+    end
+
     # Local storage target path, if a +local+ storage backend is configured.
     def local_path
       target = @storage.find { |s| s["type"] == "local" }
@@ -96,7 +126,8 @@ module PgKeeper
       end
 
       reject_unknown_keys(@raw, %w[databases defaults compression encryption storage
-                                   retention notifications workdir schedule web], "(root)")
+                                   retention notifications workdir schedule web
+                                   timeouts anomaly], "(root)")
 
       @workdir = string_or_default(@raw["workdir"], DEFAULT_WORKDIR, "workdir")
       @schedule = validate_schedule(@raw["schedule"], "schedule")
@@ -107,6 +138,53 @@ module PgKeeper
       @retention = build_retention(@raw["retention"])
       @notifications = build_notifications(@raw["notifications"])
       @web = build_web(@raw["web"])
+      @timeouts = build_timeouts(@raw["timeouts"])
+      @anomaly = build_anomaly(@raw["anomaly"])
+    end
+
+    def build_timeouts(hash)
+      return DEFAULT_TIMEOUTS.dup if hash.nil?
+
+      unless hash.is_a?(Hash)
+        problem("`timeouts` must be a mapping")
+        return DEFAULT_TIMEOUTS.dup
+      end
+
+      reject_unknown_keys(hash, DEFAULT_TIMEOUTS.keys, "timeouts")
+      hash.each do |key, value|
+        next if value.is_a?(Integer) && value >= 0
+
+        problem("timeouts.#{key} must be a non-negative integer (seconds; 0 disables)")
+      end
+      DEFAULT_TIMEOUTS.merge(hash.select { |_, v| v.is_a?(Integer) && v >= 0 })
+    end
+
+    def build_anomaly(hash)
+      return DEFAULT_ANOMALY.dup if hash.nil?
+
+      unless hash.is_a?(Hash)
+        problem("`anomaly` must be a mapping")
+        return DEFAULT_ANOMALY.dup
+      end
+
+      reject_unknown_keys(hash, DEFAULT_ANOMALY.keys, "anomaly")
+      merged = DEFAULT_ANOMALY.dup
+      merged["enabled"] = !!hash["enabled"] if hash.key?("enabled")
+      validate_anomaly_numbers(hash, merged)
+      merged
+    end
+
+    def validate_anomaly_numbers(hash, merged)
+      %w[min_samples sample_size shrink_pct grow_pct].each do |key|
+        next unless hash.key?(key)
+
+        value = hash[key]
+        if value.is_a?(Integer) && value >= 0
+          merged[key] = value
+        else
+          problem("anomaly.#{key} must be a non-negative integer")
+        end
+      end
     end
 
     def build_databases(list, defaults)

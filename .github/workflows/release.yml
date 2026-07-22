@@ -1,0 +1,56 @@
+name: Release
+
+# Cut a release by pushing a version tag:
+#
+#   git tag v1.1.0 && git push origin v1.1.0
+#
+# This builds the gem, checks the tag matches PgKeeper::VERSION, and publishes a
+# GitHub Release with the .gem attached. Pushing to RubyGems is opt-in: set the
+# repository variable PUBLISH_TO_RUBYGEMS=true and configure trusted publishing
+# for the gem on rubygems.org (https://guides.rubygems.org/trusted-publishing/).
+# Until then the release still produces an installable, reproducible artifact.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the GitHub Release
+  id-token: write   # OIDC token for RubyGems trusted publishing
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3.6"
+          bundler-cache: true
+
+      - name: Verify the tag matches PgKeeper::VERSION
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          gem_version=$(ruby -Ilib -e 'require "pgkeeper/version"; print PgKeeper::VERSION')
+          echo "tag=$tag gem_version=$gem_version"
+          if [ "$tag" != "$gem_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match PgKeeper::VERSION ($gem_version)"
+            exit 1
+          fi
+
+      - name: Build gem
+        run: gem build pgkeeper.gemspec
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            ./*.gem
+
+      - name: Publish to RubyGems (trusted publishing)
+        if: vars.PUBLISH_TO_RUBYGEMS == 'true'
+        uses: rubygems/release-gem@v1

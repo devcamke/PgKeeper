@@ -21,6 +21,21 @@ module PgKeeper
   # or incompatible.
   class EnvironmentError < Error; end
 
+  # Raised when a subprocess (pg_dump, pg_restore, psql, ...) exceeds its
+  # configured wall-clock deadline and is killed. Without this, a hung child —
+  # a lock wait, a stalled network mount, an unreachable server that never
+  # times out at the libpq layer — would block a run forever, so nothing ever
+  # returns and no failure notification is sent.
+  class TimeoutError < Error
+    attr_reader :command, :timeout_seconds
+
+    def initialize(message, command: nil, timeout_seconds: nil)
+      @command = command
+      @timeout_seconds = timeout_seconds
+      super(message)
+    end
+  end
+
   # Raised when another PgKeeper run already holds the lock.
   class LockError < Error; end
 
