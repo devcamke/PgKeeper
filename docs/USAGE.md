@@ -166,6 +166,15 @@ Key details:
 - **Schedules** accept raw cron (`"15 3 * * *"`), natural language
   (`every day at 03:15`, `every monday at 9am`), and shorthands (`hourly`,
   `daily at 03:15`, `weekly on sunday at 04:00`).
+- **`timeouts:`** — wall-clock deadlines (seconds) for the external tools:
+  `dump`, `restore`, `verify`, `query`. Generous defaults (6h/6h/1h/60s) so a
+  real operation never trips them, but finite so a hung child can't block a run
+  forever. Set any to `0` to disable that deadline.
+- **`anomaly:`** — backup-size anomaly detection (on by default). A dump that
+  shrank past `shrink_pct` (default 50%) vs the median of the last
+  `sample_size` successful runs raises a warning in the CLI, log, and
+  notification. Set `enabled: false` to turn it off, or `grow_pct` to also warn
+  on unexpected growth.
 
 The full annotated schema lives in
 [`config/pgkeeper.example.yml`](../config/pgkeeper.example.yml).
@@ -185,6 +194,7 @@ destinations failed) · **2** total failure. Cron and CI can react to them.
 | `pgkeeper backup [--only NAME ...]` | Runs the full pipeline for all (or selected) databases. Lock-guarded — concurrent runs fail loudly instead of colliding. |
 | `pgkeeper list [--only NAME ...]` | Lists backups on every destination: size, pipeline (`gzip+aes256gcm`), verified status. |
 | `pgkeeper status [--database NAME --limit N]` | Run history: most recent backup per database, or recent runs for one. |
+| `pgkeeper metrics [--output FILE]` | Prints Prometheus metrics from the run-history; `--output` writes an atomic node_exporter textfile (see §9). |
 | `pgkeeper verify [SELECTOR] [--deep] [--only NAME ...]` | Verifies backups (see §8). SELECTOR: `latest` (default), `all`, or a timestamp label/prefix. |
 | `pgkeeper prune [--apply] [--only NAME ...]` | Enforces retention. **Dry run by default** — prints what would be deleted; `--apply` deletes. |
 | `pgkeeper restore [SELECTOR] [--database NAME] [--target NAME] [--force] [--jobs N]` | Restores a backup (see §8 and RESTORE.md). Overwriting a non-empty database requires `--force`. |
@@ -282,12 +292,34 @@ detail with stderr on failures), **Backups** (browse and download artifacts),
 backup / verify / prune / test-notification / doctor — each behind a
 confirmation, running through the same lock as scheduled runs).
 
-JSON API for monitors, same auth:
+JSON API and Prometheus metrics for monitors, same auth:
 
 ```sh
 curl -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN" localhost:8321/api/status
 curl -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN" "localhost:8321/api/runs?database=app_production&limit=10"
+curl -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN" localhost:8321/metrics   # Prometheus exposition
 ```
+
+`/healthz` (liveness) and `/readyz` (readiness — workdir writable, history
+readable) are **unauthenticated**, for container liveness/readiness probes and
+load balancers:
+
+```sh
+curl localhost:8321/healthz    # -> 200 "ok"
+curl localhost:8321/readyz     # -> 200 "ready" / 503 "not ready"
+```
+
+Without the dashboard, scrape backup state straight from the CLI — point the
+node_exporter textfile collector at a scheduled `pgkeeper metrics --output`:
+
+```sh
+pgkeeper metrics --output /var/lib/node_exporter/textfile/pgkeeper.prom
+```
+
+The exposition includes `pgkeeper_last_success_timestamp_seconds`,
+`pgkeeper_last_backup_size_bytes`, `pgkeeper_last_run_duration_seconds`, and
+`pgkeeper_last_run_success` per database — enough to alert on "no successful
+backup in 26 hours" or "last dump was 0 bytes".
 
 The dashboard refuses to start without auth, binds loopback by default (put
 a TLS reverse proxy in front for remote access), and deliberately has **no

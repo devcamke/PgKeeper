@@ -58,6 +58,11 @@ destination** independently. Every run is recorded to a SQLite history that powe
   - Cluster globals (`pg_dumpall --globals-only`), a SHA-256 manifest per artifact,
     flock-guarded runs, and staging + atomic finalize so a crash never leaves a
     half-written backup.
+  - **Wall-clock timeouts** on every `pg_dump`/`pg_restore`/`psql` call
+    (configurable `timeouts:`), so a hung child can't block a run forever, and
+    **backup-size anomaly detection** that warns loudly when a dump is suddenly
+    far smaller than its recent history — the classic silently-broken-dump
+    signal — in the CLI, the log, and the run's notification.
 - **`pgkeeper list`** — lists backups across every destination with size, age, the
   compression/encryption pipeline, and verification status.
 - **`pgkeeper prune`** — enforces the retention policy (`keep_last` and/or GFS
@@ -73,6 +78,8 @@ destination** independently. Every run is recorded to a SQLite history that powe
   [docs/RESTORE.md](docs/RESTORE.md).
 - **`pgkeeper status`** — reads the SQLite run-history and shows the most recent backup
   per database (status, age, size), or recent runs for one database with `--database`.
+- **`pgkeeper metrics`** — prints Prometheus metrics from the run-history for scraping;
+  `--output FILE` writes an atomic textfile for the node_exporter textfile collector.
 - **Notifications** (fired automatically after each run, and testable with
   `pgkeeper test-notification`): **email** (SMTP+TLS, HTML+text, success/failure
   triggers), a generic/Slack **webhook**, and a **dead-man's-switch** ping so a monitor
@@ -98,7 +105,10 @@ destination** independently. Every run is recorded to a SQLite history that powe
     browser. Every action needs a CSRF token plus an explicit confirmation, and runs
     through the same lock as cron — never a second concurrent pipeline. Restores are
     deliberately CLI-only.
-  - **JSON API**: `/api/status` and `/api/runs` for external monitors.
+  - **JSON API & metrics**: `/api/status` and `/api/runs` for external monitors,
+    plus a Prometheus `/metrics` endpoint (last run/success timestamp, backup
+    size, duration, success per database). Unauthenticated `/healthz` and
+    `/readyz` probes sit outside auth for container orchestrators.
   - **Security**: auth is mandatory (constant-time token or basic auth), it binds to
     `127.0.0.1` by default, and it reads the same run-history/manifests the CLI writes —
     no second data path. Needs the optional `rack` + `puma` gems; see the `web:` block in

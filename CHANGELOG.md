@@ -5,8 +5,43 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ## Unreleased
 
+### Added
+
+- **Subprocess timeouts (production safety).** Every `pg_dump`/`pg_dumpall`/
+  `pg_restore`/`psql`/`df` call now runs under a configurable wall-clock deadline
+  (new `PgKeeper::Subprocess`). On expiry the child's whole process group is
+  signalled `TERM` then `KILL` and a `TimeoutError` is raised, so a hung child (a
+  lock wait, a stalled network mount, a server that accepts the connection but
+  never answers) can no longer block a run forever with no backup and no failure
+  alert. Configurable via the new `timeouts:` block (`dump`/`restore`/`verify`/
+  `query`, seconds; `0` disables); defaults are generous-but-finite.
+- **Backup-size anomaly detection.** A fresh dump is compared against the median
+  of recent successful runs from the SQLite history; one that shrank past the
+  threshold (default 50%) raises a loud warning in the CLI output, structured
+  log, and the run's notification (subject, text, HTML, JSON). This catches the
+  silently-broken dump — a dropped table, a bad `exclude_tables`, a truncated
+  database — that still exits 0. Configurable via the `anomaly:` block; growth
+  warnings are opt-in. (PLAN.md Phase 11.)
+- **Prometheus metrics.** `pgkeeper metrics` prints last run/success timestamps,
+  last backup size, duration, and success per database; `--output FILE` writes an
+  atomic node_exporter textfile. The dashboard also serves the same exposition at
+  `/metrics` (behind its auth). (PLAN.md Phase 11.)
+- **Dashboard health probes.** Unauthenticated `/healthz` (liveness) and
+  `/readyz` (readiness — workdir writable, history readable) for container
+  orchestrators and load balancers, served outside the auth layer so a probe
+  needs no credential.
+- **Release + supply-chain automation.** CI now runs `bundler-audit` and a PR
+  dependency review, a weekly scheduled security run, and a Ruby 3.2/3.3/3.4
+  compatibility matrix; a Dependabot config keeps dependencies and Actions
+  current; and a tag-triggered release workflow builds the gem, verifies the tag
+  matches `PgKeeper::VERSION`, and publishes a GitHub Release (with opt-in
+  RubyGems trusted publishing). SimpleCov is available via `COVERAGE=1`.
+
 ### Changed
 
+- **Deep-verify is now strict.** Tier-3 verification runs `pg_restore` with
+  `--exit-on-error`, so a partially-failing custom-format restore fails
+  verification instead of logging errors and exiting 0.
 - **Refreshed the `pgkeeper web` dashboard UI.** A modern visual pass over the
   same read-mostly pages: a proper light/dark color system, a sticky top bar
   with a brand mark and tab-style nav, card-style tables with rounded corners
