@@ -20,6 +20,12 @@ job list below. Restores are CLI-only by design.</p>
       </select>
     </label>
   </p>
+  <p>Destinations <span class="muted">(none checked = all)</span></p>
+  <p>
+    <%- @destinations.each do |dest| -%>
+    <label class="dest"><input type="checkbox" name="destinations[]" value="<%= h(dest.token) %>"> <%= h(dest.label) %></label>
+    <%- end -%>
+  </p>
   <p><label><input type="checkbox" name="confirm"> I want to start a backup run</label></p>
   <button type="submit">Backup</button>
 </form>
@@ -57,6 +63,22 @@ job list below. Restores are CLI-only by design.</p>
   <p><label><input type="checkbox" name="confirm"> Run the checks</label></p>
   <button type="submit">Doctor</button>
 </form>
+
+<h2>Trigger remotely</h2>
+<p class="muted">Kick off the same actions from a script, webhook, cron on another host, or a phone
+shortcut. Authenticate with the dashboard token as a Bearer credential; the call returns a job id
+you can poll. Requires a <span class="mono">web.auth.token</span> (browser basic-auth can't reach
+these endpoints).</p>
+<pre class="mono"># Back up one database to just the NAS and Google Drive:
+curl -sS -X POST https://HOST/api/actions/backup \
+  -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"database":"app_production","destinations":["nas","gdrive"]}'
+
+# Poll the job it returned, or list recent jobs:
+curl -sS https://HOST/api/jobs/1     -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN"
+curl -sS https://HOST/api/jobs        -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN"
+curl -sS https://HOST/api/destinations -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN"</pre>
 
 <h2>Jobs</h2>
 <%- if @jobs.empty? -%>

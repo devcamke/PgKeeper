@@ -15,8 +15,8 @@ module PgKeeper
         @logger = logger
       end
 
-      def backup(only: nil)
-        report = Orchestrator.new(@config, logger: @logger).run(only: only)
+      def backup(only: nil, destinations: nil)
+        report = Orchestrator.new(@config, logger: @logger).run(only: only, destinations: destinations)
         summary = "#{report.succeeded.length} succeeded, #{report.partial.length} partial, " \
                   "#{report.failed.length} failed"
         raise Error, "backup finished with failures: #{summary}" unless report.exit_code == ExitCode::SUCCESS

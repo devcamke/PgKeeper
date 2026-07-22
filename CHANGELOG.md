@@ -7,6 +7,23 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **Named destinations & per-run destination selection.** Any `storage:` target
+  can carry a friendly `name:` (e.g. `nas`, `gdrive`, `onedrive`); a run can be
+  scoped to a subset of destinations instead of the full fan-out via
+  `pgkeeper backup --destinations nas,gdrive` (names or types, comma-separated).
+  The name becomes the destination's identity in run history, notifications, and
+  the dashboard. New `pgkeeper destinations` lists the selectable tokens. The
+  default is unchanged — omitting the flag still fans out to every destination.
+- **Remote-trigger JSON API.** `pgkeeper web` now exposes token-authenticated
+  `POST /api/actions/{backup,verify,prune}` endpoints that start the same
+  lock-guarded background jobs as the dashboard and return a job id (HTTP 202) to
+  poll at `GET /api/jobs/<id>` (`GET /api/jobs` lists recent jobs). `backup`
+  accepts `database` and `destinations` (JSON or form-encoded). The Bearer token
+  doubles as CSRF protection, so the API needs no form token/confirmation; a
+  `web.auth.token` is required (basic-auth can't reach it). New
+  `GET /api/destinations` returns the selectable tokens. The dashboard's Actions
+  page gains a per-destination picker and copy-ready `curl` recipes. See
+  [docs/REMOTE-API.md](docs/REMOTE-API.md).
 - **Subprocess timeouts (production safety).** Every `pg_dump`/`pg_dumpall`/
   `pg_restore`/`psql`/`df` call now runs under a configurable wall-clock deadline
   (new `PgKeeper::Subprocess`). On expiry the child's whole process group is

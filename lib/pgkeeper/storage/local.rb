@@ -18,7 +18,7 @@ module PgKeeper
         @min_free_bytes = min_free_bytes
       end
 
-      def name = "local:#{@root}"
+      def default_name = "local:#{@root}"
 
       def healthcheck
         FileUtils.mkdir_p(@root)

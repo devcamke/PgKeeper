@@ -51,7 +51,7 @@ module PgKeeper
         validate_credentials!
       end
 
-      def name = "dropbox:#{@root.empty? ? '/' : @root}"
+      def default_name = "dropbox:#{@root.empty? ? '/' : @root}"
 
       # Cheap authenticated liveness probe: /check/user echoes its query back, so
       # a correct echo proves both connectivity and a valid token.

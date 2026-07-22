@@ -22,15 +22,28 @@ module PgKeeper
 
       attr_reader :logger
 
+      # A friendly, config-supplied alias for this destination (e.g. "nas",
+      # "gdrive"). When set it becomes the destination's {#name} — the identity
+      # recorded in run history and used to select destinations for a run.
+      attr_accessor :display_name
+
       def initialize(logger: PgKeeper.logger, retry_attempts: DEFAULT_ATTEMPTS, retry_base: 0.5)
         @logger = logger
         @retry_attempts = retry_attempts
         @retry_base = retry_base
+        @display_name = nil
       end
 
-      # Human-readable destination name, e.g. "local:/var/backups" or
-      # "s3://bucket/prefix". Subclasses must override.
+      # Human-readable destination name: the config-supplied {#display_name} if
+      # one was given, otherwise the backend's own {#default_name}
+      # (e.g. "local:/var/backups", "s3://bucket/prefix").
       def name
+        (@display_name && !@display_name.empty? ? @display_name : default_name).to_s
+      end
+
+      # The backend's intrinsic name, derived from its target. Subclasses must
+      # override; callers use {#name}, which layers {#display_name} on top.
+      def default_name
         raise NotImplementedError
       end
 

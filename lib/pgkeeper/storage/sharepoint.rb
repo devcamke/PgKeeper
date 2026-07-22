@@ -53,7 +53,7 @@ module PgKeeper
         @auth = AppToken.new(tenant_id: tenant_id, client_id: client_id, client_secret: client_secret, timeout: timeout)
       end
 
-      def name = "sharepoint:#{@drive_id}"
+      def default_name = "sharepoint:#{@drive_id}"
 
       def healthcheck
         graph_get("#{drive_base}/root", { "$select" => "id" })

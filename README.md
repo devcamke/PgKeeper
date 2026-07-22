@@ -51,10 +51,13 @@ destination** independently. Every run is recorded to a SQLite history that powe
     `custom`/`directory` dumps.
   - **Encryption at rest:** AES-256-GCM (built in) or GPG, keyed by passphrase or keyfile;
     tamper-evident, and reversed transparently on restore.
-  - **Storage fan-out:** local filesystem, S3-compatible object storage (AWS S3, MinIO,
-    Backblaze B2, Cloudflare R2, Spaces), Dropbox, Google Drive, and SharePoint/OneDrive.
-    Destinations are independent — one being down fails only that destination, and the
-    report shows per-destination status.
+  - **Storage fan-out:** local filesystem (including a mounted NAS/SMB/NFS share),
+    S3-compatible object storage (AWS S3, MinIO, Backblaze B2, Cloudflare R2, Spaces),
+    Dropbox, Google Drive, and SharePoint/OneDrive. Destinations are independent — one
+    being down fails only that destination, and the report shows per-destination status.
+  - **Destination selection:** give any destination a friendly `name:` and scope a single
+    run to a subset with `pgkeeper backup --destinations nas,gdrive` (default is all).
+    `pgkeeper destinations` lists the selectable tokens.
   - Cluster globals (`pg_dumpall --globals-only`), a SHA-256 manifest per artifact,
     flock-guarded runs, and staging + atomic finalize so a crash never leaves a
     half-written backup.
@@ -102,12 +105,16 @@ destination** independently. Every run is recorded to a SQLite history that powe
   - **Backups**: browse artifacts across destinations and download them (allowlisted
     against the catalog — the endpoint can't be steered at arbitrary paths).
   - **Actions**: trigger backup / verify / prune / test-notification / doctor from the
-    browser. Every action needs a CSRF token plus an explicit confirmation, and runs
-    through the same lock as cron — never a second concurrent pipeline. Restores are
-    deliberately CLI-only.
-  - **JSON API & metrics**: `/api/status` and `/api/runs` for external monitors,
-    plus a Prometheus `/metrics` endpoint (last run/success timestamp, backup
-    size, duration, success per database). Unauthenticated `/healthz` and
+    browser, and pick which destinations a backup targets. Every action needs a CSRF token
+    plus an explicit confirmation, and runs through the same lock as cron — never a second
+    concurrent pipeline. Restores are deliberately CLI-only.
+  - **Remote-trigger API**: token-authenticated `POST /api/actions/{backup,verify,prune}`
+    kicks off the same jobs from a script, webhook, or phone shortcut — choosing databases
+    and destinations per call — and returns a job id to poll at `GET /api/jobs/<id>`. See
+    [docs/REMOTE-API.md](docs/REMOTE-API.md).
+  - **JSON API & metrics**: `/api/status`, `/api/runs`, and `/api/destinations` for
+    external monitors, plus a Prometheus `/metrics` endpoint (last run/success timestamp,
+    backup size, duration, success per database). Unauthenticated `/healthz` and
     `/readyz` probes sit outside auth for container orchestrators.
   - **Security**: auth is mandatory (constant-time token or basic auth), it binds to
     `127.0.0.1` by default, and it reads the same run-history/manifests the CLI writes —
@@ -225,7 +232,9 @@ docker compose up -d
 - [docs/SECURITY.md](docs/SECURITY.md) — least-privilege backup role, secrets,
   encryption, dashboard hardening.
 - [docs/PROVIDERS.md](docs/PROVIDERS.md) — storage setup for AWS S3, MinIO,
-  Backblaze B2, Cloudflare R2, Spaces.
+  Backblaze B2, Cloudflare R2, Spaces, Dropbox, Google Drive, SharePoint/OneDrive.
+- [docs/REMOTE-API.md](docs/REMOTE-API.md) — triggering backups remotely and
+  selecting destinations, from the CLI, the web API, and the dashboard.
 - [CHANGELOG.md](CHANGELOG.md) — release history mapped to plan phases.
 
 ## Development

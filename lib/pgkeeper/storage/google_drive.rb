@@ -49,7 +49,7 @@ module PgKeeper
         @credentials = ServiceAccount.from_config(json: credentials_json, file: credentials_file, timeout: timeout)
       end
 
-      def name = "google_drive:#{@folder_id}"
+      def default_name = "google_drive:#{@folder_id}"
 
       def healthcheck
         api_get("/drive/v3/files/#{@folder_id}", { "fields" => "id", "supportsAllDrives" => "true" })

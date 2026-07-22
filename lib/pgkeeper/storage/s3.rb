@@ -39,7 +39,7 @@ module PgKeeper
         end
       end
 
-      def name = "s3://#{@bucket}/#{@prefix}"
+      def default_name = "s3://#{@bucket}/#{@prefix}"
 
       def healthcheck
         @client.head_bucket(bucket: @bucket)

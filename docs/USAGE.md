@@ -191,7 +191,8 @@ destinations failed) · **2** total failure. Cron and CI can react to them.
 |---|---|
 | `pgkeeper doctor` | Checks tools on PATH, config validity, storage health, DB connectivity, and pg_dump-vs-server version drift. Run it after any config change. |
 | `pgkeeper validate` | Loads the config and reports every schema problem at once. |
-| `pgkeeper backup [--only NAME ...]` | Runs the full pipeline for all (or selected) databases. Lock-guarded — concurrent runs fail loudly instead of colliding. |
+| `pgkeeper backup [--only NAME ...] [--destinations TOKEN ...]` | Runs the full pipeline for all (or selected) databases, fanning out to all (or selected) destinations. Lock-guarded — concurrent runs fail loudly instead of colliding. |
+| `pgkeeper destinations` | Lists configured destinations and the tokens `--destinations` / the API accept. |
 | `pgkeeper list [--only NAME ...]` | Lists backups on every destination: size, pipeline (`gzip+aes256gcm`), verified status. |
 | `pgkeeper status [--database NAME --limit N]` | Run history: most recent backup per database, or recent runs for one. |
 | `pgkeeper metrics [--output FILE]` | Prints Prometheus metrics from the run-history; `--output` writes an atomic node_exporter textfile (see §9). |
@@ -289,14 +290,27 @@ Pages: **Overview** (per-database traffic lights, last verified age, next
 run, size-trend sparklines, destination health), **Runs** (timeline + per-run
 detail with stderr on failures), **Backups** (browse and download artifacts),
 **Retention** (exactly what the next prune deletes), **Actions** (trigger
-backup / verify / prune / test-notification / doctor — each behind a
-confirmation, running through the same lock as scheduled runs).
+backup / verify / prune / test-notification / doctor — with a per-destination
+picker on backup — each behind a confirmation, running through the same lock as
+scheduled runs).
+
+Trigger those actions remotely with the token-authenticated action API — start
+a backup (optionally scoped to a database and destinations) and poll the job it
+returns. Full reference in [REMOTE-API.md](REMOTE-API.md):
+
+```sh
+curl -X POST -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"destinations":["nas","gdrive"]}' localhost:8321/api/actions/backup
+curl -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN" localhost:8321/api/jobs/1
+```
 
 JSON API and Prometheus metrics for monitors, same auth:
 
 ```sh
 curl -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN" localhost:8321/api/status
 curl -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN" "localhost:8321/api/runs?database=app_production&limit=10"
+curl -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN" localhost:8321/api/destinations
 curl -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN" localhost:8321/metrics   # Prometheus exposition
 ```
 
