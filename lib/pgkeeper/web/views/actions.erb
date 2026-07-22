@@ -68,7 +68,7 @@ job list below. Restores are CLI-only by design.</p>
   <tr>
     <td><%= job.id %></td>
     <td class="mono"><%= h(job.action) %></td>
-    <td class="<%= { running: 'warn', done: 'ok', failed: 'bad' }.fetch(job.status, '') %>"><%= h(job.status) %></td>
+    <td><%= pill(job.status, { running: 'warn', done: 'ok', failed: 'bad' }.fetch(job.status, '')) %></td>
     <td><%= h(fmt_time(job.started_at)) %></td>
     <td><%= job.finished_at ? h(fmt_time(job.finished_at)) : "-" %></td>
     <td><%= h(job.detail || "") %></td>

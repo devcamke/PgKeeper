@@ -5,6 +5,15 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ## Unreleased
 
+### Changed
+
+- **Refreshed the `pgkeeper web` dashboard UI.** A modern visual pass over the
+  same read-mostly pages: a proper light/dark color system, a sticky top bar
+  with a brand mark and tab-style nav, card-style tables with rounded corners
+  and header fills, tinted status pills (replacing plain colored text), and
+  accent-colored buttons and form controls. Purely presentational — the
+  templates, routes, data, and auth are unchanged.
+
 ### Added
 
 - **Dropbox storage backend** (`type: dropbox`, closing part of the Phase 4

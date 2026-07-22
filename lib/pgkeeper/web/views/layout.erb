@@ -5,37 +5,165 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><%= h(@title) %> · PgKeeper</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; line-height: 1.5; }
-  header { display: flex; align-items: baseline; gap: 1.5rem; padding: 0.75rem 1.25rem;
-           border-bottom: 1px solid #8884; flex-wrap: wrap; }
-  header .brand { font-weight: 700; font-size: 1.1rem; }
-  nav a { margin-right: 1rem; text-decoration: none; color: inherit; opacity: 0.75; }
-  nav a.active { opacity: 1; font-weight: 600; border-bottom: 2px solid currentColor; }
-  main { padding: 1.25rem; max-width: 72rem; margin: 0 auto; }
-  h1 { font-size: 1.3rem; } h2 { font-size: 1.05rem; margin-top: 1.75rem; }
-  table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; font-size: 0.92rem; }
-  th, td { text-align: left; padding: 0.35rem 0.6rem; border-bottom: 1px solid #8883; vertical-align: top; }
-  th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.7; }
-  tr:hover td { background: #8881; }
-  .dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; }
-  .dot-green { background: #2da44e; } .dot-yellow { background: #d4a72c; } .dot-red { background: #cf222e; }
-  .ok { color: #2da44e; } .warn { color: #b08800; } .bad { color: #cf222e; }
-  .muted { opacity: 0.65; } .mono { font-family: ui-monospace, monospace; font-size: 0.85em; }
-  .spark { color: #57799c; vertical-align: middle; }
-  .msg { padding: 0.6rem 0.9rem; border: 1px solid #57799c88; border-radius: 6px; margin-bottom: 1rem; }
-  form.action { border: 1px solid #8884; border-radius: 8px; padding: 0.9rem 1.1rem; margin-bottom: 1rem; }
-  form.action h3 { margin: 0 0 0.4rem; font-size: 1rem; }
-  form.action p { margin: 0.25rem 0; font-size: 0.9rem; }
-  button { padding: 0.35rem 0.9rem; border-radius: 6px; border: 1px solid #8886; cursor: pointer; }
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #f1f4f8;
+    --border: #e4e8ee;
+    --border-strong: #d3d9e2;
+    --text: #1b2330;
+    --muted: #667085;
+    --accent: #2f6fed;
+    --accent-weak: #2f6fed14;
+    --ok: #15925a; --ok-bg: #15925a1a;
+    --warn: #b7791f; --warn-bg: #b7791f1f;
+    --bad: #d64545; --bad-bg: #d6454518;
+    --shadow: 0 1px 2px rgba(16,24,40,0.04), 0 1px 3px rgba(16,24,40,0.06);
+    --shadow-lift: 0 4px 12px rgba(16,24,40,0.10);
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-2: #1b222c;
+      --border: #262d38;
+      --border-strong: #333c48;
+      --text: #e6edf3;
+      --muted: #97a2b0;
+      --accent: #6b8afd;
+      --accent-weak: #6b8afd1f;
+      --ok: #3fb950; --ok-bg: #3fb95022;
+      --warn: #d6a441; --warn-bg: #d6a44122;
+      --bad: #f27272; --bad-bg: #f2727222;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3);
+      --shadow-lift: 0 6px 18px rgba(0,0,0,0.45);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0; line-height: 1.55; color: var(--text); background: var(--bg);
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+
+  header {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; gap: 1.5rem;
+    padding: 0.7rem 1.5rem; flex-wrap: wrap;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  header .brand {
+    display: inline-flex; align-items: center; gap: 0.55rem;
+    font-weight: 700; font-size: 1.08rem; letter-spacing: -0.01em;
+  }
+  header .brand svg { display: block; }
+  nav { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+  nav a {
+    padding: 0.35rem 0.8rem; border-radius: 8px; font-size: 0.92rem;
+    text-decoration: none; color: var(--muted); font-weight: 500;
+    transition: background 0.12s, color 0.12s;
+  }
+  nav a:hover { background: var(--surface-2); color: var(--text); }
+  nav a.active { background: var(--accent-weak); color: var(--accent); font-weight: 600; }
+
+  main { padding: 1.75rem 1.5rem 3rem; max-width: 74rem; margin: 0 auto; }
+  h1 { font-size: 1.45rem; letter-spacing: -0.02em; margin: 0 0 1.1rem; }
+  h2 { font-size: 1.05rem; letter-spacing: -0.01em; margin: 2rem 0 0.6rem; }
+  h3 { font-size: 1rem; }
+
+  table {
+    border-collapse: separate; border-spacing: 0; width: 100%;
+    margin: 0.4rem 0 1rem; font-size: 0.9rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+  }
+  th, td { text-align: left; padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  th {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
+    font-weight: 600; color: var(--muted); background: var(--surface-2);
+    border-bottom: 1px solid var(--border-strong);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--accent-weak); }
+
+  .dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; }
+  .dot-green { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); }
+  .dot-yellow { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-bg); }
+  .dot-red { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-bg); }
+
+  /* Status pills — a <span class="pill ok"> inside a cell, so the table
+     cell itself keeps its normal table-cell layout. */
+  .pill {
+    display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px;
+    font-size: 0.78rem; font-weight: 600; line-height: 1.55; white-space: nowrap;
+  }
+  .pill.ok { color: var(--ok); background: var(--ok-bg); }
+  .pill.warn { color: var(--warn); background: var(--warn-bg); }
+  .pill.bad { color: var(--bad); background: var(--bad-bg); }
+  .pill a { color: inherit; text-decoration: none; }
+  /* Plain (non-pill) status text keeps just the accent color. */
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  /* Block-level error messages read as tinted banners. */
+  p.bad { display: block; border-radius: 8px; padding: 0.55rem 0.8rem; background: var(--bad-bg); font-weight: 500; }
+
+  .muted { color: var(--muted); }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.85em; }
+  .spark { color: var(--accent); vertical-align: middle; }
+
+  .msg {
+    padding: 0.7rem 1rem; border-radius: 10px; margin-bottom: 1.25rem;
+    background: var(--accent-weak); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    color: var(--text); font-size: 0.92rem;
+  }
+
+  form.action {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.1rem 1.25rem; margin-bottom: 1rem;
+    box-shadow: var(--shadow); transition: box-shadow 0.15s, border-color 0.15s;
+  }
+  form.action:hover { box-shadow: var(--shadow-lift); border-color: var(--border-strong); }
+  form.action h3 { margin: 0 0 0.35rem; }
+  form.action p { margin: 0.3rem 0; font-size: 0.9rem; color: var(--muted); }
+  form.action label { color: var(--text); }
   label { margin-right: 0.9rem; }
-  a { color: #3a6ea5; }
-  pre { background: #8881; padding: 0.7rem; border-radius: 6px; overflow-x: auto; }
+
+  button {
+    padding: 0.5rem 1.1rem; border-radius: 8px; border: none; cursor: pointer;
+    background: var(--accent); color: #fff; font-weight: 600; font-size: 0.9rem;
+    font-family: inherit; margin-top: 0.4rem; transition: filter 0.12s, transform 0.05s;
+  }
+  button:hover { filter: brightness(1.07); }
+  button:active { transform: translateY(1px); }
+
+  select, input[type="text"] {
+    padding: 0.35rem 0.55rem; border-radius: 7px; border: 1px solid var(--border-strong);
+    background: var(--surface); color: var(--text); font-family: inherit; font-size: 0.88rem;
+  }
+  input[type="checkbox"] { accent-color: var(--accent); width: 0.95rem; height: 0.95rem; vertical-align: -2px; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre {
+    background: var(--surface-2); border: 1px solid var(--border);
+    padding: 0.85rem 1rem; border-radius: 10px; overflow-x: auto; font-size: 0.85rem;
+  }
 </style>
 </head>
 <body>
 <header>
-  <span class="brand">PgKeeper</span>
+  <span class="brand">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <ellipse cx="12" cy="5.5" rx="7.5" ry="3" fill="var(--accent)"/>
+      <path d="M4.5 5.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6" stroke="var(--accent)" stroke-width="2" fill="none"/>
+      <path d="M4.5 11.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6" stroke="var(--accent)" stroke-width="2" fill="none" opacity="0.55"/>
+    </svg>
+    PgKeeper
+  </span>
   <nav>
     <a href="/" class="<%= @active == 'overview' ? 'active' : '' %>">Overview</a>
     <a href="/runs" class="<%= @active == 'runs' || @active == 'run' ? 'active' : '' %>">Runs</a>

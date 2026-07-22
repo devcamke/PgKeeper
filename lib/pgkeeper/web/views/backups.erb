@@ -21,7 +21,7 @@
       <%= "raw" if [artifact.compression, artifact.encryption].all? { |x| x.to_s == "none" } %>
     </td>
     <%- if artifact.verified_at -%>
-    <td class="ok" title="<%= h(fmt_time(artifact.verified_at)) %>"><%= h(artifact.verified_tier) %></td>
+    <td title="<%= h(fmt_time(artifact.verified_at)) %>"><%= pill(artifact.verified_tier, "ok") %></td>
     <%- else -%>
     <td class="muted">-</td>
     <%- end -%>
