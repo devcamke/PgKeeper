@@ -206,6 +206,40 @@ module PgKeeper
       end
     end
 
+    def test_valid_schedule_accepted
+      config = Config.parse(<<~YAML)
+        schedule: daily at 03:15
+        databases:
+          - name: app
+            schedule: every monday at 9am
+      YAML
+
+      assert_equal "daily at 03:15", config.schedule
+      assert_equal "every monday at 9am", config.database("app").schedule
+    end
+
+    def test_bad_global_schedule_rejected
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          schedule: whenever
+          databases:
+            - name: app
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("schedule") })
+    end
+
+    def test_bad_database_schedule_rejected
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          databases:
+            - name: app
+              schedule: "not a schedule"
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("schedule") })
+    end
+
     def test_slug_is_filesystem_safe
       config = Config.parse(<<~YAML)
         databases:

@@ -29,7 +29,7 @@ module PgKeeper
     DEFAULT_WORKDIR = "/var/backups/pgkeeper"
 
     attr_reader :source, :raw, :databases, :storage, :retention,
-                :compression, :encryption, :notifications, :workdir
+                :compression, :encryption, :notifications, :workdir, :schedule
 
     # Load and validate config from a YAML file path.
     def self.load(path, env: ENV)
@@ -93,9 +93,10 @@ module PgKeeper
       end
 
       reject_unknown_keys(@raw, %w[databases defaults compression encryption storage
-                                   retention notifications workdir], "(root)")
+                                   retention notifications workdir schedule], "(root)")
 
       @workdir = string_or_default(@raw["workdir"], DEFAULT_WORKDIR, "workdir")
+      @schedule = validate_schedule(@raw["schedule"], "schedule")
       @compression = enum_or_default(@raw["compression"], COMPRESSION, "none", "compression")
       @encryption = build_encryption(@raw["encryption"])
       @databases = build_databases(@raw["databases"], @raw["defaults"])
@@ -293,6 +294,23 @@ module PgKeeper
       default
     end
 
+    # Validate a schedule expression parses (cron / natural language), returning
+    # the original string for the scheduler to re-parse.
+    def validate_schedule(value, key)
+      return nil if value.nil?
+
+      unless value.is_a?(String)
+        problem("#{key} must be a string schedule expression")
+        return nil
+      end
+
+      Schedule.parse(value)
+      value
+    rescue ConfigError => e
+      problem("#{key}: #{e.message}")
+      nil
+    end
+
     def problem(message)
       @problems << message
     end
@@ -311,11 +329,11 @@ module PgKeeper
   # invoke +pg_dump+ (libpq env vars), keeping the password out of argv.
   class DatabaseConfig
     KEYS = %w[name host port username password database format include_globals
-              schemas exclude_tables sslmode pgpass connect_timeout].freeze
+              schemas exclude_tables sslmode pgpass connect_timeout schedule].freeze
 
     attr_reader :name, :host, :port, :username, :password, :database,
                 :format, :include_globals, :schemas, :exclude_tables,
-                :sslmode, :connect_timeout, :validation_problems
+                :sslmode, :connect_timeout, :schedule, :validation_problems
 
     def initialize(hash, global_compression: "none")
       @validation_problems = []
@@ -334,6 +352,7 @@ module PgKeeper
       @sslmode = hash["sslmode"]
       @connect_timeout = hash["connect_timeout"]
       @use_pgpass = !!hash["pgpass"]
+      @schedule = coerce_schedule(hash["schedule"])
     end
 
     # libpq environment for invoking pg_dump/pg_dumpall/psql without putting
@@ -375,6 +394,16 @@ module PgKeeper
         return "custom"
       end
       value
+    end
+
+    def coerce_schedule(value)
+      return nil if value.nil?
+
+      Schedule.parse(value.to_s)
+      value.to_s
+    rescue ConfigError => e
+      @validation_problems << "schedule: #{e.message}"
+      nil
     end
   end
 end

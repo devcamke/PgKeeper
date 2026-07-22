@@ -130,7 +130,71 @@ module PgKeeper
           results.all? ? :green : :yellow
     end
 
+    desc "schedule [ACTION]", "Show (print) or install (install) the schedule from config"
+    method_option :systemd, type: :boolean, default: false, desc: "Emit systemd .service/.timer units"
+    method_option :output, type: :string, desc: "Write systemd units to this directory instead of stdout"
+    method_option :jitter, type: :numeric, default: 0, desc: "systemd RandomizedDelaySec (stagger)"
+    method_option :bin, type: :string, default: "pgkeeper", desc: "pgkeeper executable path in generated units"
+    def schedule(action = "print")
+      config = load_config
+      case action
+      when "print" then print_schedule(config)
+      when "install" then run_schedule_install(config, options)
+      else
+        say_error "unknown schedule action #{action.inspect} (expected: print, install)", :red
+        exit(ExitCode::FAILURE)
+      end
+    end
+
+    desc "daemon", "Run scheduled backups in-process (for containers without cron/systemd)"
+    method_option :jitter, type: :numeric, default: 0, desc: "Max seconds of random stagger before each run"
+    def daemon
+      config = load_config
+      Daemon.new(config, logger: logger, jitter: options[:jitter]).run
+    rescue Error => e
+      say_error e.message, :red
+      exit(ExitCode::FAILURE)
+    end
+
     no_commands do
+      def print_schedule(config)
+        entries = Scheduler.entries(config)
+        return say("No schedule configured (set `schedule:` in your config).", :yellow) if entries.empty?
+
+        entries.each do |e|
+          scope = e.only ? " (--only #{e.only.join(',')})" : " (all databases)"
+          say "#{e.label}: #{e.schedule.summary}#{scope}"
+        end
+      end
+
+      def run_schedule_install(config, opts)
+        entries = Scheduler.entries(config)
+        return say("No schedule configured (set `schedule:` in your config).", :yellow) if entries.empty?
+
+        opts[:systemd] ? install_systemd(config, entries, opts) : install_cron(config, entries, opts)
+      end
+
+      def install_cron(config, entries, opts)
+        cron = Scheduler::Cron.new(entries, bin: opts[:bin], config_path: config.source, workdir: config.workdir)
+        say cron.render
+      end
+
+      def install_systemd(config, entries, opts)
+        units = Scheduler::Systemd.new(entries, bin: opts[:bin], config_path: config.source,
+                                                jitter_seconds: opts[:jitter].to_i).units
+        return write_units(units, opts[:output]) if opts[:output]
+
+        units.each { |name, body| say "# ===== #{name} =====\n#{body}" }
+      end
+
+      def write_units(units, dir)
+        require "fileutils"
+        FileUtils.mkdir_p(dir)
+        units.each { |name, body| File.write(File.join(dir, name), body) }
+        say "Wrote #{units.length} unit file(s) to #{dir}", :green
+        say "Enable with: systemctl daemon-reload && systemctl enable --now #{units.keys.grep(/\.timer$/).join(' ')}"
+      end
+
       def logger
         @logger ||= begin
           destinations = [$stdout]

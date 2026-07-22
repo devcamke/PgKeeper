@@ -40,6 +40,10 @@ Gem::Specification.new do |spec|
   spec.add_dependency "mail", "~> 2.8"
   spec.add_dependency "sqlite3", "~> 2.0"
 
+  # Cron / natural-language schedule parsing and next-occurrence computation for
+  # the scheduler and daemon (pure Ruby).
+  spec.add_dependency "fugit", "~> 1.11"
+
   # Ruby 4 no longer ships these as default gems, so declare them explicitly
   # rather than relying on them being present in the standard library.
   spec.add_dependency "erb", "~> 4.0"
