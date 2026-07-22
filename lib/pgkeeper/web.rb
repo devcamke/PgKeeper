@@ -8,6 +8,7 @@ rescue LoadError
 end
 
 require "pgkeeper/web/auth"
+require "pgkeeper/web/health"
 require "pgkeeper/web/jobs"
 require "pgkeeper/web/actions"
 require "pgkeeper/web/dashboard"
@@ -38,12 +39,15 @@ module PgKeeper
     # Credentials come from the config's `web.auth` block.
     def build(config, logger: PgKeeper.logger)
       auth = config.web["auth"] || {}
-      Auth.new(
+      authed = Auth.new(
         App.new(config, logger: logger),
         token: presence(auth["token"]),
         username: presence(auth["username"]),
         password: presence(auth["password"])
       )
+      # Health probes sit outside auth so an orchestrator can reach them with no
+      # credential; everything else stays behind the auth middleware.
+      Health.new(authed, config, logger: logger)
     end
 
     # Serve the dashboard with puma. Blocks until interrupted.

@@ -13,6 +13,8 @@ group :development, :test do
   gem "rubocop-rake", "~> 0.6", require: false
   # Stubs HTTP so webhook / dead-man's-switch notifier tests need no network.
   gem "webmock", "~> 3.19", require: false
+  # Line coverage, opt-in via COVERAGE=1 so the default test loop stays fast.
+  gem "simplecov", "~> 0.22", require: false
 end
 
 # The optional web dashboard (`pgkeeper web`). rack is the app framework; puma

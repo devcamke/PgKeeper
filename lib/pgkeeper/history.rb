@@ -67,6 +67,18 @@ module PgKeeper
       rows.map { |h| to_row(h) }
     end
 
+    # The most recent *successful* run row for each database, newest first.
+    # Powers the "last successful backup" metric and readiness checks.
+    def last_success_per_database
+      rows = query(<<~SQL)
+        SELECT r.* FROM runs r
+        JOIN (SELECT database, MAX(started_at) AS mx FROM runs WHERE status = 'success' GROUP BY database) latest
+          ON r.database = latest.database AND r.started_at = latest.mx AND r.status = 'success'
+        ORDER BY r.database
+      SQL
+      rows.map { |h| to_row(h) }
+    end
+
     # Every row recorded under one run id (one row per database), in insertion
     # order. Powers the dashboard's run-detail page.
     def runs_for(run_id)

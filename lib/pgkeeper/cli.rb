@@ -117,6 +117,20 @@ module PgKeeper
       print_status(rows)
     end
 
+    desc "metrics", "Print Prometheus metrics (last run/success time, size, duration) for scraping"
+    method_option :output, type: :string,
+                           desc: "Write to this file atomically (for the node_exporter textfile collector)"
+    def metrics
+      config = load_config
+      text = Metrics.render(config, logger: logger)
+      if options[:output]
+        Metrics.write_textfile(text, options[:output])
+        say "Wrote metrics to #{options[:output]}", :green
+      else
+        print text
+      end
+    end
+
     desc "test-notification", "Send a test notification through every configured notifier"
     def test_notification
       config = load_config

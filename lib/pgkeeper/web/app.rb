@@ -58,10 +58,25 @@ module PgKeeper
         when "/backups" then page_backups
         when "/download" then download(request)
         when "/actions" then page_actions(request)
+        else dispatch_get_data(request)
+        end
+      end
+
+      # Machine-readable read endpoints (JSON API + Prometheus metrics), split
+      # out from the HTML pages to keep either route table small.
+      def dispatch_get_data(request)
+        case request.path_info
         when "/api/status" then json_response(@dashboard.api_status)
         when "/api/runs" then api_runs(request)
+        when "/metrics" then metrics_response
         else not_found
         end
+      end
+
+      # Prometheus exposition of backup state, behind the same auth as the rest
+      # of the dashboard (scrapers pass the token as a bearer credential).
+      def metrics_response
+        [200, { "content-type" => Metrics::CONTENT_TYPE }, [Metrics.render(@config, logger: @logger)]]
       end
 
       # Every mutating route requires the CSRF token and an explicit

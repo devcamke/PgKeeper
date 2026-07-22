@@ -1,5 +1,15 @@
 # frozen_string_literal: true
 
+# Line coverage, opt-in with COVERAGE=1 so the default `rake test` loop stays
+# fast and hermetic. Must start before any application code is required.
+if ENV["COVERAGE"]
+  require "simplecov"
+  SimpleCov.start do
+    add_filter "/test/"
+    enable_coverage :branch
+  end
+end
+
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 
 require "minitest/autorun"
