@@ -88,6 +88,16 @@ storage:
   #   credentials_file: /etc/pgkeeper/service-account.json
   #   # credentials_json: <%= ENV["GDRIVE_SERVICE_ACCOUNT_JSON"] %>   # inline alternative
 
+  # SharePoint / OneDrive via Microsoft Graph (no gem required). Backups land in
+  # one drive (`drive_id`); large files stream through a Graph upload session.
+  # See docs/PROVIDERS.md#sharepoint--onedrive for the app registration + drive.
+  # - type: sharepoint
+  #   drive_id: <%= ENV["GRAPH_DRIVE_ID"] %>
+  #   tenant_id: <%= ENV["AZURE_TENANT_ID"] %>
+  #   client_id: <%= ENV["AZURE_CLIENT_ID"] %>
+  #   client_secret: <%= ENV["AZURE_CLIENT_SECRET"] %>
+  #   root: pgkeeper            # optional folder prefix within the drive
+
 # Retention policy, enforced per destination. (Phase 5.)
 retention:
   keep_daily: 7

@@ -243,6 +243,34 @@ module PgKeeper
       assert(err.problems.any? { |p| p.include?("google_drive") && p.include?("credentials") })
     end
 
+    def test_sharepoint_storage_accepted
+      config = Config.parse(<<~YAML)
+        storage:
+          - type: sharepoint
+            drive_id: b!drive
+            tenant_id: tenant-uuid
+            client_id: app-uuid
+            client_secret: shhh
+        databases:
+          - name: app
+      YAML
+
+      assert_equal "sharepoint", config.storage.first["type"]
+    end
+
+    def test_sharepoint_storage_without_credentials_rejected
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          storage:
+            - type: sharepoint
+              drive_id: b!drive
+          databases:
+            - name: app
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("sharepoint") && p.include?("tenant_id") })
+    end
+
     def test_load_missing_file_raises
       assert_raises(ConfigError) { Config.load("/nonexistent/pgkeeper.yml") }
     end

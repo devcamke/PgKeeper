@@ -25,6 +25,7 @@ module PgKeeper
       "s3" => %w[type bucket region prefix endpoint access_key_id secret_access_key force_path_style],
       "dropbox" => %w[type root access_token refresh_token app_key app_secret],
       "google_drive" => %w[type folder_id credentials_json credentials_file],
+      "sharepoint" => %w[type drive_id tenant_id client_id client_secret root],
       "memory" => %w[type]
     }.freeze
 
@@ -196,6 +197,8 @@ module PgKeeper
         validate_dropbox_credentials(entry, idx)
       when "google_drive"
         validate_google_drive(entry, idx)
+      when "sharepoint"
+        validate_sharepoint(entry, idx)
       end
     end
 
@@ -215,6 +218,14 @@ module PgKeeper
       return if entry["credentials_json"].is_a?(String) || entry["credentials_file"].is_a?(String)
 
       problem("storage[#{idx}] (google_drive) requires `credentials_json` or `credentials_file`")
+    end
+
+    # SharePoint/OneDrive needs the target drive plus the app registration's
+    # tenant and client credentials.
+    def validate_sharepoint(entry, idx)
+      %w[drive_id tenant_id client_id client_secret].each do |key|
+        problem("storage[#{idx}] (sharepoint) requires `#{key}`") unless entry[key].is_a?(String)
+      end
     end
 
     def build_retention(hash)

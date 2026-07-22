@@ -3,11 +3,11 @@
 PgKeeper fans every backup out to all configured `storage:` targets. This
 guide walks through credentials and configuration per provider.
 
-Four backends ship today: **local filesystem**, **S3-compatible object
+Five backends ship today: **local filesystem**, **S3-compatible object
 storage** (which covers AWS S3, MinIO, Backblaze B2, Cloudflare R2, and
-DigitalOcean Spaces), **Dropbox**, and **Google Drive**. The storage layer is a
-small adapter interface (`lib/pgkeeper/storage/base.rb`), so further providers
-are additive.
+DigitalOcean Spaces), **Dropbox**, **Google Drive**, and **SharePoint /
+OneDrive**. The storage layer is a small adapter interface
+(`lib/pgkeeper/storage/base.rb`), so further providers are additive.
 
 Whatever the provider: run `pgkeeper doctor` afterwards — it health-checks
 every configured destination with a harmless API call and tells you exactly
@@ -203,9 +203,48 @@ storage:
 
 ## SharePoint / OneDrive
 
-Not yet implemented. The original plan (PLAN.md Phase 4) sketches it; the
-adapter interface (`upload` / `download` / `list` / `delete` / `healthcheck`)
-plus the shared contract test suite (`test/support/storage_contract.rb`) is
-the template — a new provider is one adapter class and one contract test
-include, as the Dropbox and Google Drive adapters
-(`lib/pgkeeper/storage/`) demonstrate. Contributions welcome.
+No SDK required — the adapter uses the Microsoft Graph API with an app-only
+(client-credentials) token. Backups land in one drive (a SharePoint document
+library or a OneDrive) addressed by its `drive_id`; large artifacts stream
+through a Graph upload session.
+
+```yaml
+storage:
+  - type: sharepoint
+    drive_id: <%= ENV["GRAPH_DRIVE_ID"] %>
+    tenant_id: <%= ENV["AZURE_TENANT_ID"] %>
+    client_id: <%= ENV["AZURE_CLIENT_ID"] %>
+    client_secret: <%= ENV["AZURE_CLIENT_SECRET"] %>
+    root: pgkeeper                 # optional folder prefix within the drive
+```
+
+**Register an app and find the drive:**
+
+1. In **Entra ID → App registrations**, create an app. Under **Certificates &
+   secrets**, add a **client secret** (that's `client_secret`). The app's
+   **Application (client) ID** and the **Directory (tenant) ID** are
+   `client_id` and `tenant_id`.
+2. Under **API permissions**, add the **application** permission
+   `Files.ReadWrite.All` (Microsoft Graph), then **grant admin consent**.
+   App-only access needs an application permission, not a delegated one.
+3. Find the target `drive_id` with the token from step 1–2:
+   - **OneDrive:** `GET https://graph.microsoft.com/v1.0/users/{user-id}/drive`
+   - **SharePoint:** resolve the site, then its default library —
+     `GET /sites/{hostname}:/sites/{site-path}` then `GET /sites/{site-id}/drive`
+
+   Use the returned `id` as `drive_id`.
+4. Run `pgkeeper doctor` — it fetches the drive's root to confirm the app can
+   reach it.
+
+> The app can read and write **every** file in that drive with
+> `Files.ReadWrite.All`, so dedicate a drive/library to backups and keep the
+> client secret out of the repo (feed it from an environment variable).
+
+## Adding another provider
+
+The storage interface (`upload` / `download` / `list` / `delete` /
+`healthcheck`, with shared retry + backoff) plus the contract test suite
+(`test/support/storage_contract.rb`) is the template — a new provider is one
+adapter class and one contract-test include, as the Dropbox, Google Drive, and
+SharePoint adapters (`lib/pgkeeper/storage/`) all demonstrate. Contributions
+welcome.

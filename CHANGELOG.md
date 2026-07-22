@@ -23,6 +23,14 @@ All notable changes to PgKeeper. Versions map to the milestones in
   a resumable upload session. Health-checked by `pgkeeper doctor` and covered
   by the shared storage contract. See
   [docs/PROVIDERS.md](docs/PROVIDERS.md#google-drive).
+- **SharePoint / OneDrive storage backend** (`type: sharepoint`, completing the
+  Phase 4 cloud-provider set). No SDK required — it uses the Microsoft Graph
+  API with an app-only (client-credentials) token from an Entra app
+  registration (`tenant_id` + `client_id` + `client_secret`). Backups land in
+  one drive (`drive_id`) under an optional `root` folder, addressed by path;
+  large files stream through a Graph upload session. Health-checked by
+  `pgkeeper doctor` and covered by the shared storage contract. See
+  [docs/PROVIDERS.md](docs/PROVIDERS.md#sharepoint--onedrive).
 
 ### Changed
 

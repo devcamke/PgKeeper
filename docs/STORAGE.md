@@ -111,6 +111,27 @@ See [PROVIDERS.md](PROVIDERS.md#google-drive) for creating the service account,
 enabling the Drive API, and sharing the folder. `pgkeeper doctor` fetches the
 folder's metadata to confirm access.
 
+## SharePoint / OneDrive
+
+Needs no gem — the adapter uses the Microsoft Graph API with an app-only token.
+Backups land in one drive (`drive_id`); large files stream through a Graph
+upload session.
+
+```yaml
+storage:
+  - type: sharepoint
+    drive_id: <%= ENV["GRAPH_DRIVE_ID"] %>
+    tenant_id: <%= ENV["AZURE_TENANT_ID"] %>
+    client_id: <%= ENV["AZURE_CLIENT_ID"] %>
+    client_secret: <%= ENV["AZURE_CLIENT_SECRET"] %>
+    root: pgkeeper                 # optional folder prefix within the drive
+```
+
+See [PROVIDERS.md](PROVIDERS.md#sharepoint--onedrive) for registering the app
+(needs the `Files.ReadWrite.All` application permission with admin consent) and
+finding the `drive_id`. `pgkeeper doctor` fetches the drive root to confirm
+access.
+
 ## Verifying a destination
 
 ```sh
@@ -118,9 +139,9 @@ pgkeeper doctor -c pgkeeper.yml     # health-checks every configured destination
 pgkeeper list   -c pgkeeper.yml     # what's stored, with verification status
 ```
 
-## Roadmap
+## Adding a provider
 
-A SharePoint/OneDrive backend is planned. The storage interface (`upload` /
-`download` / `list` / `delete` / `healthcheck` with retry + backoff) is shared
-and contract-tested, so adding a provider is additive — the Dropbox and Google
-Drive adapters (`lib/pgkeeper/storage/`) are worked examples.
+The storage interface (`upload` / `download` / `list` / `delete` /
+`healthcheck` with retry + backoff) is shared and contract-tested, so adding a
+provider is additive — the Dropbox, Google Drive, and SharePoint adapters
+(`lib/pgkeeper/storage/`) are worked examples.

@@ -6,6 +6,7 @@ require "pgkeeper/storage/memory"
 require "pgkeeper/storage/s3"
 require "pgkeeper/storage/dropbox"
 require "pgkeeper/storage/google_drive"
+require "pgkeeper/storage/sharepoint"
 
 module PgKeeper
   # Storage backends and the factory that builds them from config.
@@ -13,7 +14,7 @@ module PgKeeper
   # A run fans a backup out to every configured target. Building the adapters is
   # separate from using them, so config errors surface up front.
   module Storage
-    TYPES = %w[local s3 dropbox google_drive memory].freeze
+    TYPES = %w[local s3 dropbox google_drive sharepoint memory].freeze
 
     module_function
 
@@ -29,6 +30,8 @@ module PgKeeper
         build_dropbox(target, logger)
       when "google_drive"
         build_google_drive(target, logger)
+      when "sharepoint"
+        build_sharepoint(target, logger)
       when "memory"
         Memory.new(logger: logger)
       else
@@ -70,6 +73,17 @@ module PgKeeper
         folder_id: target["folder_id"],
         credentials_json: target["credentials_json"],
         credentials_file: target["credentials_file"],
+        logger: logger
+      )
+    end
+
+    def build_sharepoint(target, logger)
+      SharePoint.new(
+        drive_id: target["drive_id"],
+        tenant_id: target["tenant_id"],
+        client_id: target["client_id"],
+        client_secret: target["client_secret"],
+        root: target["root"].to_s,
         logger: logger
       )
     end
