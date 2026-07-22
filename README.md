@@ -155,6 +155,8 @@ docker compose up -d
 
 ## Documentation
 
+- [docs/USAGE.md](docs/USAGE.md) — **the full usage guide**: install, configure,
+  every command, scheduling, dashboard, Docker, library use, troubleshooting.
 - [docs/RESTORE.md](docs/RESTORE.md) — the 3 a.m. restore runbook.
 - [docs/SECURITY.md](docs/SECURITY.md) — least-privilege backup role, secrets,
   encryption, dashboard hardening.
