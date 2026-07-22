@@ -63,6 +63,18 @@ module PgKeeper
         { "success" => "ok", "partial" => "warn", "failure" => "bad" }.fetch(status.to_s, "")
       end
 
+      # A tinted status pill. `cls` is one of "ok"/"warn"/"bad" (or ""); the
+      # inner text is escaped.
+      def pill(text, cls)
+        klass = cls.to_s.empty? ? "pill" : "pill #{h(cls)}"
+        %(<span class="#{klass}">#{h(text)}</span>)
+      end
+
+      # Pill for a run/job status string, colored by its severity.
+      def status_pill(status)
+        pill(status, status_class(status))
+      end
+
       # Inline SVG sparkline of artifact sizes — surfaces the "dump suddenly
       # 60% smaller" anomaly visually. Values are chronological.
       def sparkline(values, width: 120, height: 24)

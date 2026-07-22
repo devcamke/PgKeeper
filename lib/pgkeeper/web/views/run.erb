@@ -1,6 +1,6 @@
 <h1>Run <span class="mono"><%= h(@run_id) %></span></h1>
 <%- @rows.each do |row| -%>
-<h2><%= h(row.database) %> — <span class="<%= status_class(row.status) %>"><%= h(row.status) %></span></h2>
+<h2><%= h(row.database) %> — <%= status_pill(row.status) %></h2>
 <table>
   <tr><th>Started</th><th>Finished</th><th>Duration</th><th>Artifacts</th><th>Total size</th></tr>
   <tr>
@@ -14,7 +14,7 @@
 <%- unless Array(row.destinations).empty? -%>
 <p>
   <%- Array(row.destinations).each do |dest| -%>
-  <span class="mono <%= dest["status"] == "ok" ? "ok" : "bad" %>"><%= h(dest["name"]) %>=<%= h(dest["status"]) %></span>
+  <span class="pill <%= dest["status"] == "ok" ? "ok" : "bad" %>"><%= h(dest["name"]) %>=<%= h(dest["status"]) %></span>
   <%- end -%>
 </p>
 <%- end -%>
