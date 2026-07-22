@@ -191,6 +191,86 @@ module PgKeeper
       assert_equal "/data/pgk/backups", config.local_path
     end
 
+    def test_dropbox_storage_with_access_token_accepted
+      config = Config.parse(<<~YAML)
+        storage:
+          - type: dropbox
+            root: /pgkeeper
+            access_token: tok-123
+        databases:
+          - name: app
+      YAML
+
+      assert_equal "dropbox", config.storage.first["type"]
+    end
+
+    def test_dropbox_storage_without_credentials_rejected
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          storage:
+            - type: dropbox
+              root: /pgkeeper
+          databases:
+            - name: app
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("dropbox") && p.include?("access_token") })
+    end
+
+    def test_google_drive_storage_accepted
+      config = Config.parse(<<~YAML)
+        storage:
+          - type: google_drive
+            folder_id: ABC123
+            credentials_file: /etc/pgkeeper/sa.json
+        databases:
+          - name: app
+      YAML
+
+      assert_equal "google_drive", config.storage.first["type"]
+    end
+
+    def test_google_drive_storage_without_credentials_rejected
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          storage:
+            - type: google_drive
+              folder_id: ABC123
+          databases:
+            - name: app
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("google_drive") && p.include?("credentials") })
+    end
+
+    def test_sharepoint_storage_accepted
+      config = Config.parse(<<~YAML)
+        storage:
+          - type: sharepoint
+            drive_id: b!drive
+            tenant_id: tenant-uuid
+            client_id: app-uuid
+            client_secret: shhh
+        databases:
+          - name: app
+      YAML
+
+      assert_equal "sharepoint", config.storage.first["type"]
+    end
+
+    def test_sharepoint_storage_without_credentials_rejected
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          storage:
+            - type: sharepoint
+              drive_id: b!drive
+          databases:
+            - name: app
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("sharepoint") && p.include?("tenant_id") })
+    end
+
     def test_load_missing_file_raises
       assert_raises(ConfigError) { Config.load("/nonexistent/pgkeeper.yml") }
     end

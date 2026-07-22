@@ -3,8 +3,8 @@
 A full-fledged, automated PostgreSQL backup solution in Ruby.
 
 PgKeeper dumps your databases on a schedule, compresses and optionally encrypts the
-artifacts, stores them locally and/or in the cloud (Google Drive, Dropbox,
-SharePoint/OneDrive, S3-compatible), enforces retention policies, verifies that backups
+artifacts, stores them locally and/or in the cloud (S3-compatible object storage, Dropbox,
+Google Drive, and SharePoint/OneDrive), enforces retention policies, verifies that backups
 are actually restorable, reports status via email, and includes an optional web dashboard
 (`pgkeeper web`) for monitoring backup health and triggering runs.
 
@@ -51,9 +51,10 @@ destination** independently. Every run is recorded to a SQLite history that powe
     `custom`/`directory` dumps.
   - **Encryption at rest:** AES-256-GCM (built in) or GPG, keyed by passphrase or keyfile;
     tamper-evident, and reversed transparently on restore.
-  - **Storage fan-out:** local filesystem and S3-compatible object storage (AWS S3, MinIO,
-    Backblaze B2, Cloudflare R2, Spaces). Destinations are independent — one being down
-    fails only that destination, and the report shows per-destination status.
+  - **Storage fan-out:** local filesystem, S3-compatible object storage (AWS S3, MinIO,
+    Backblaze B2, Cloudflare R2, Spaces), Dropbox, Google Drive, and SharePoint/OneDrive.
+    Destinations are independent — one being down fails only that destination, and the
+    report shows per-destination status.
   - Cluster globals (`pg_dumpall --globals-only`), a SHA-256 manifest per artifact,
     flock-guarded runs, and staging + atomic finalize so a crash never leaves a
     half-written backup.

@@ -14,11 +14,11 @@ jobs:
         with:
           install: true
           cache: true
-      - name: Verify pinned Ruby (4.0.6)
+      - name: Verify pinned Ruby (3.3.6)
         run: |
           v=$(mise exec -- ruby -e 'print RUBY_VERSION')
           echo "Ruby version: $v"
-          [ "$v" = "4.0.6" ] || { echo "expected Ruby 4.0.6, got $v"; exit 1; }
+          [ "$v" = "3.3.6" ] || { echo "expected Ruby 3.3.6, got $v"; exit 1; }
       - name: Install dependencies
         run: mise exec -- bundle install
       - name: RuboCop
@@ -59,11 +59,11 @@ jobs:
         with:
           install: true
           cache: true
-      - name: Verify pinned Ruby (4.0.6)
+      - name: Verify pinned Ruby (3.3.6)
         run: |
           v=$(mise exec -- ruby -e 'print RUBY_VERSION')
           echo "Ruby version: $v"
-          [ "$v" = "4.0.6" ] || { echo "expected Ruby 4.0.6, got $v"; exit 1; }
+          [ "$v" = "3.3.6" ] || { echo "expected Ruby 3.3.6, got $v"; exit 1; }
       - name: Install dependencies
         run: mise exec -- bundle install
       - name: Run tests

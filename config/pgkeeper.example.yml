@@ -70,6 +70,34 @@ storage:
   #   access_key_id: <%= ENV["AWS_ACCESS_KEY_ID"] %>
   #   secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
 
+  # Dropbox (no gem required). Large files stream through an upload session, so
+  # dumps above Dropbox's 150 MB single-request limit upload fine. Use a
+  # refresh-token triple (durable) or a long-lived `access_token`. See
+  # docs/PROVIDERS.md#dropbox for creating the app and minting the token.
+  # - type: dropbox
+  #   root: /pgkeeper            # folder prefix; omit for the app root
+  #   refresh_token: <%= ENV["DROPBOX_REFRESH_TOKEN"] %>
+  #   app_key: <%= ENV["DROPBOX_APP_KEY"] %>
+  #   app_secret: <%= ENV["DROPBOX_APP_SECRET"] %>
+
+  # Google Drive (no gem required). Backups land in one folder shared with a
+  # service account; large files stream through a resumable session. See
+  # docs/PROVIDERS.md#google-drive for the service-account + folder setup.
+  # - type: google_drive
+  #   folder_id: <%= ENV["GDRIVE_FOLDER_ID"] %>
+  #   credentials_file: /etc/pgkeeper/service-account.json
+  #   # credentials_json: <%= ENV["GDRIVE_SERVICE_ACCOUNT_JSON"] %>   # inline alternative
+
+  # SharePoint / OneDrive via Microsoft Graph (no gem required). Backups land in
+  # one drive (`drive_id`); large files stream through a Graph upload session.
+  # See docs/PROVIDERS.md#sharepoint--onedrive for the app registration + drive.
+  # - type: sharepoint
+  #   drive_id: <%= ENV["GRAPH_DRIVE_ID"] %>
+  #   tenant_id: <%= ENV["AZURE_TENANT_ID"] %>
+  #   client_id: <%= ENV["AZURE_CLIENT_ID"] %>
+  #   client_secret: <%= ENV["AZURE_CLIENT_SECRET"] %>
+  #   root: pgkeeper            # optional folder prefix within the drive
+
 # Retention policy, enforced per destination. (Phase 5.)
 retention:
   keep_daily: 7

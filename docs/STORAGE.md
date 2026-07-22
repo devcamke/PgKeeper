@@ -73,6 +73,65 @@ existence check:
 `pgkeeper doctor` calls `HeadBucket` to confirm the bucket is reachable with the
 given credentials before you rely on it.
 
+## Dropbox
+
+Needs no gem — the adapter uses the Dropbox HTTP API v2 directly. Large
+artifacts stream through an upload session, lifting the 150 MB single-request
+ceiling so multi-gigabyte dumps upload cleanly.
+
+```yaml
+storage:
+  - type: dropbox
+    root: /pgkeeper                                  # folder prefix; omit for the app root
+    refresh_token: <%= ENV["DROPBOX_REFRESH_TOKEN"] %>
+    app_key: <%= ENV["DROPBOX_APP_KEY"] %>
+    app_secret: <%= ENV["DROPBOX_APP_SECRET"] %>
+```
+
+A long-lived `access_token` is accepted in place of the refresh-token triple.
+See [PROVIDERS.md](PROVIDERS.md#dropbox) for creating the app and minting a
+refresh token. `pgkeeper doctor` calls `/2/check/user` to confirm the token
+works.
+
+## Google Drive
+
+Needs no gem — the adapter uses the Drive REST API v3 and signs its own
+service-account JWT. Backups land in one folder you share with the service
+account; large files stream through a resumable upload session.
+
+```yaml
+storage:
+  - type: google_drive
+    folder_id: <%= ENV["GDRIVE_FOLDER_ID"] %>
+    credentials_file: /etc/pgkeeper/service-account.json
+    # credentials_json: <%= ENV["GDRIVE_SERVICE_ACCOUNT_JSON"] %>   # inline alternative
+```
+
+See [PROVIDERS.md](PROVIDERS.md#google-drive) for creating the service account,
+enabling the Drive API, and sharing the folder. `pgkeeper doctor` fetches the
+folder's metadata to confirm access.
+
+## SharePoint / OneDrive
+
+Needs no gem — the adapter uses the Microsoft Graph API with an app-only token.
+Backups land in one drive (`drive_id`); large files stream through a Graph
+upload session.
+
+```yaml
+storage:
+  - type: sharepoint
+    drive_id: <%= ENV["GRAPH_DRIVE_ID"] %>
+    tenant_id: <%= ENV["AZURE_TENANT_ID"] %>
+    client_id: <%= ENV["AZURE_CLIENT_ID"] %>
+    client_secret: <%= ENV["AZURE_CLIENT_SECRET"] %>
+    root: pgkeeper                 # optional folder prefix within the drive
+```
+
+See [PROVIDERS.md](PROVIDERS.md#sharepoint--onedrive) for registering the app
+(needs the `Files.ReadWrite.All` application permission with admin consent) and
+finding the `drive_id`. `pgkeeper doctor` fetches the drive root to confirm
+access.
+
 ## Verifying a destination
 
 ```sh
@@ -80,9 +139,9 @@ pgkeeper doctor -c pgkeeper.yml     # health-checks every configured destination
 pgkeeper list   -c pgkeeper.yml     # what's stored, with verification status
 ```
 
-## Roadmap
+## Adding a provider
 
-Google Drive, Dropbox, and SharePoint/OneDrive backends are planned. The storage
-interface (`upload` / `download` / `list` / `delete` / `healthcheck` with retry +
-backoff) is shared and contract-tested, so adding a provider is additive — see
-`lib/pgkeeper/storage/`.
+The storage interface (`upload` / `download` / `list` / `delete` /
+`healthcheck` with retry + backoff) is shared and contract-tested, so adding a
+provider is additive — the Dropbox, Google Drive, and SharePoint adapters
+(`lib/pgkeeper/storage/`) are worked examples.

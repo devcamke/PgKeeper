@@ -4,6 +4,9 @@ require "pgkeeper/storage/base"
 require "pgkeeper/storage/local"
 require "pgkeeper/storage/memory"
 require "pgkeeper/storage/s3"
+require "pgkeeper/storage/dropbox"
+require "pgkeeper/storage/google_drive"
+require "pgkeeper/storage/sharepoint"
 
 module PgKeeper
   # Storage backends and the factory that builds them from config.
@@ -11,7 +14,7 @@ module PgKeeper
   # A run fans a backup out to every configured target. Building the adapters is
   # separate from using them, so config errors surface up front.
   module Storage
-    TYPES = %w[local s3 memory].freeze
+    TYPES = %w[local s3 dropbox google_drive sharepoint memory].freeze
 
     module_function
 
@@ -23,6 +26,12 @@ module PgKeeper
         Local.new(root: target.fetch("path"), logger: logger)
       when "s3"
         build_s3(target, logger)
+      when "dropbox"
+        build_dropbox(target, logger)
+      when "google_drive"
+        build_google_drive(target, logger)
+      when "sharepoint"
+        build_sharepoint(target, logger)
       when "memory"
         Memory.new(logger: logger)
       else
@@ -44,6 +53,37 @@ module PgKeeper
         access_key_id: target["access_key_id"],
         secret_access_key: target["secret_access_key"],
         force_path_style: !!target["force_path_style"],
+        logger: logger
+      )
+    end
+
+    def build_dropbox(target, logger)
+      Dropbox.new(
+        root: target["root"].to_s,
+        access_token: target["access_token"],
+        refresh_token: target["refresh_token"],
+        app_key: target["app_key"],
+        app_secret: target["app_secret"],
+        logger: logger
+      )
+    end
+
+    def build_google_drive(target, logger)
+      GoogleDrive.new(
+        folder_id: target["folder_id"],
+        credentials_json: target["credentials_json"],
+        credentials_file: target["credentials_file"],
+        logger: logger
+      )
+    end
+
+    def build_sharepoint(target, logger)
+      SharePoint.new(
+        drive_id: target["drive_id"],
+        tenant_id: target["tenant_id"],
+        client_id: target["client_id"],
+        client_secret: target["client_secret"],
+        root: target["root"].to_s,
         logger: logger
       )
     end

@@ -3,6 +3,45 @@
 All notable changes to PgKeeper. Versions map to the milestones in
 [PLAN.md](PLAN.md).
 
+## Unreleased
+
+### Added
+
+- **Dropbox storage backend** (`type: dropbox`, closing part of the Phase 4
+  cloud-provider gap). No SDK required — it uses the Dropbox HTTP API v2
+  directly. Large artifacts stream through an upload session, so dumps above
+  Dropbox's 150 MB single-request ceiling upload with flat memory. Auth is a
+  refresh-token triple (`refresh_token` + `app_key` + `app_secret`, exchanged
+  for a short-lived access token per run) or a long-lived `access_token`.
+  Health-checked by `pgkeeper doctor` and covered by the shared storage
+  contract. See [docs/PROVIDERS.md](docs/PROVIDERS.md#dropbox).
+- **Google Drive storage backend** (`type: google_drive`, closing more of the
+  Phase 4 gap). No SDK required — it uses the Drive REST API v3 directly and
+  signs its own service-account JWT (`credentials_json` inline or a
+  `credentials_file` path). Each artifact is stored as a file named for its
+  full path inside one shared folder (`folder_id`); large files stream through
+  a resumable upload session. Health-checked by `pgkeeper doctor` and covered
+  by the shared storage contract. See
+  [docs/PROVIDERS.md](docs/PROVIDERS.md#google-drive).
+- **SharePoint / OneDrive storage backend** (`type: sharepoint`, completing the
+  Phase 4 cloud-provider set). No SDK required — it uses the Microsoft Graph
+  API with an app-only (client-credentials) token from an Entra app
+  registration (`tenant_id` + `client_id` + `client_secret`). Backups land in
+  one drive (`drive_id`) under an optional `root` folder, addressed by path;
+  large files stream through a Graph upload session. Health-checked by
+  `pgkeeper doctor` and covered by the shared storage contract. See
+  [docs/PROVIDERS.md](docs/PROVIDERS.md#sharepoint--onedrive).
+
+### Changed
+
+- **S3 uploads now use multipart** (via the SDK transfer manager) for files
+  above 100 MiB, lifting the 5 GiB single-`PutObject` limit that previously
+  made large dumps unstorable; smaller files still go in one request.
+- **Disk preflight is size-aware**: it estimates the live database size
+  (`pg_database_size`) and reserves a multiple of it for the staged pipeline,
+  instead of only enforcing a fixed free-space floor. Falls back to the floor
+  when the size can't be measured.
+
 ## 1.0.0 — 2026-07-22
 
 Phases 9–10: the web dashboard, packaging, and the documentation set —
