@@ -1,50 +1,40 @@
-# PgKeeper runtime image.
-#
-# Ships the CLI with the PostgreSQL client tools it shells out to. By default it
-# runs the in-process scheduler (`pgkeeper daemon`); override the command to run
-# one-off `backup` / `verify` / `restore` invocations.
+# PgKeeper container image: the CLI, the scheduling daemon, and the optional
+# web dashboard in one image.
 #
 #   docker build -t pgkeeper .
-#   docker run --rm -v $PWD/pgkeeper.yml:/app/pgkeeper.yml:ro pgkeeper doctor -c /app/pgkeeper.yml
-FROM ruby:4.0-slim-bookworm
+#   docker run --rm -v ./pgkeeper.yml:/etc/pgkeeper/pgkeeper.yml:ro pgkeeper doctor
+#
+# See docker-compose.example.yml for a full deployment (daemon + dashboard
+# alongside a database) and docs/SECURITY.md before shipping dumps anywhere.
+#
+# The base image's PostgreSQL client tools must be at least as new as the
+# servers being dumped (pg_dump refuses to dump a newer server). Debian's
+# postgresql-client tracks the distro; pin the PGDG repo here if your servers
+# are newer than what the base image ships.
+FROM ruby:4.0-slim
 
-# postgresql-client provides pg_dump/pg_restore/pg_dumpall/psql (the tools
-# PgKeeper drives); the rest are runtime libs. Native gems (sqlite3) need a
-# compiler at build time only, so build-essential is installed and removed in
-# the same layer that runs bundle install (see below).
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      postgresql-client \
-      libsqlite3-0 \
-      ca-certificates \
-      tzdata \
- && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    build-essential \
+    libyaml-dev \
+    zstd \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install gems in their own layer so code changes don't bust the dependency
-# cache. The gemspec is evaluated during `bundle install`, so the files it reads
-# (version.rb) must be present.
+# Install gems first so source edits don't bust the dependency layer. The
+# development/test groups stay out of the image; web (rack + puma) and cloud
+# (aws-sdk-s3) stay in so the dashboard and S3 destinations work.
 COPY Gemfile pgkeeper.gemspec ./
-COPY lib/pgkeeper/version.rb ./lib/pgkeeper/version.rb
-RUN apt-get update \
- && apt-get install -y --no-install-recommends build-essential libsqlite3-dev \
- && bundle config set --local without 'development test' \
- && bundle install \
- && apt-get purge -y --auto-remove build-essential libsqlite3-dev \
- && rm -rf /var/lib/apt/lists/* /usr/local/bundle/cache
+COPY lib/pgkeeper/version.rb lib/pgkeeper/version.rb
+RUN bundle config set --local without "development test" && bundle install
 
 COPY . .
 
-# Local staging + default backup destination; mount a volume here to persist.
-ENV PGKEEPER_WORKDIR=/var/backups/pgkeeper
-RUN mkdir -p "$PGKEEPER_WORKDIR"
-VOLUME ["/var/backups/pgkeeper"]
+# Config is read from /etc/pgkeeper/pgkeeper.yml (a default search path of the
+# CLI) — mount it there. Backups and run history live under /var/backups/pgkeeper.
+VOLUME /var/backups/pgkeeper
+EXPOSE 8321
 
-# Run as a non-root user.
-RUN useradd --system --create-home --home-dir /home/pgkeeper pgkeeper \
- && chown -R pgkeeper:pgkeeper /app "$PGKEEPER_WORKDIR"
-USER pgkeeper
-
-ENTRYPOINT ["bundle", "exec", "pgkeeper"]
-CMD ["--help"]
+ENTRYPOINT ["/app/docker/entrypoint.sh"]
+CMD ["daemon"]

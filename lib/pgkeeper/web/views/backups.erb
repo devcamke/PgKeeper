@@ -1,0 +1,38 @@
+<h1>Backups</h1>
+<%- @destinations.each do |(name, sets, error)| -%>
+<h2 class="mono"><%= h(name) %></h2>
+<%- if error -%>
+<p class="bad"><%= h(error) %></p>
+<%- elsif sets.empty? -%>
+<p class="muted">No backups on this destination.</p>
+<%- else -%>
+<table>
+  <tr><th>Database</th><th>Backup</th><th>Kind</th><th>Size</th><th>Pipeline</th>
+      <th>Verified</th><th>Download</th></tr>
+  <%- sets.each do |set| -%>
+  <%- set.artifacts.each do |artifact| -%>
+  <tr>
+    <td><%= h(set.database) %></td>
+    <td class="mono"><%= h(set.label) %></td>
+    <td><%= h(artifact.kind) %></td>
+    <td><%= h(human_size(artifact.size_bytes)) %></td>
+    <td class="mono">
+      <%= h([artifact.compression, artifact.encryption].reject { |x| x.to_s == "none" }.join("+")) %>
+      <%= "raw" if [artifact.compression, artifact.encryption].all? { |x| x.to_s == "none" } %>
+    </td>
+    <%- if artifact.verified_at -%>
+    <td class="ok" title="<%= h(fmt_time(artifact.verified_at)) %>"><%= h(artifact.verified_tier) %></td>
+    <%- else -%>
+    <td class="muted">-</td>
+    <%- end -%>
+    <td>
+      <a href="/download?destination=<%= u(name) %>&amp;path=<%= u(artifact.remote_path) %>">artifact</a>
+      · <a href="/download?destination=<%= u(name) %>&amp;path=<%= u(artifact.manifest_path) %>">manifest</a>
+    </td>
+  </tr>
+  <%- end -%>
+  <%- end -%>
+</table>
+<%- end -%>
+<%- end -%>
+<p class="muted">Restores are deliberately CLI-only — see <span class="mono">docs/RESTORE.md</span>.</p>

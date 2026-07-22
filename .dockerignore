@@ -2,17 +2,11 @@
 .github
 tmp
 pkg
-coverage
-*.gem
+test
+docs
+*.md
+!README.md
 Gemfile.lock
-.bundle
-vendor/bundle
-# Never bake secrets or local runtime state into the image.
-pgkeeper.yml
-config/pgkeeper.yml
-*.dump
-*.sql
-*.manifest.json
-history.sqlite3
-.pgkeeper.lock
-.pgkeeper-staging-*
+.rubocop.yml
+.mise.toml
+docker-compose*.yml

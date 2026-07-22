@@ -29,6 +29,9 @@ Metrics/ClassLength:
     # The Thor CLI aggregates every command plus its presentation helpers; it is
     # the natural place for that surface area to accumulate.
     - "lib/pgkeeper/cli.rb"
+    # Config is the strict schema validator — every config key it accepts adds
+    # a few lines of validation by design.
+    - "lib/pgkeeper/config.rb"
 Metrics/BlockLength:
   # Thor keeps command helpers inside a single `no_commands` block by design.
   AllowedMethods:

@@ -1,74 +1,100 @@
 # PgKeeper Security Guide
 
-Backups are a high-value target: a single artifact contains your whole database.
-Treat them accordingly.
+Backups concentrate everything sensitive about your database into portable
+files. This guide covers the least-privilege database role, secret handling,
+encryption, artifact permissions, and the web dashboard's security model.
 
-## A least-privilege backup role
+## Least-privilege backup role
 
-`pg_dump` doesn't need superuser — it needs to *read* everything you back up.
-Create a dedicated role rather than backing up as `postgres`:
+Never dump as a superuser. Create a dedicated role that can read everything
+but change nothing:
 
 ```sql
-CREATE ROLE backup_user LOGIN PASSWORD 'set-via-secret-manager';
+CREATE ROLE backup_user LOGIN PASSWORD '...';
 
--- Let it connect and read the target database:
+-- PostgreSQL 14+: the built-in read-all role covers current and future tables.
+GRANT pg_read_all_data TO backup_user;
+```
+
+On older servers, grant per database instead:
+
+```sql
 GRANT CONNECT ON DATABASE app_production TO backup_user;
-\c app_production
 GRANT USAGE ON SCHEMA public TO backup_user;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO backup_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO backup_user;
 ```
 
 Notes:
-- **Globals / `include_globals`:** dumping roles and tablespaces with
-  `pg_dumpall --globals-only` requires a role that can read `pg_authid`
-  (superuser, or `pg_read_all_settings`/membership that exposes it). If you don't
-  grant that, drop `include_globals` and manage roles separately.
-- **Restores** need more privilege than backups (creating objects, owners). Use a
-  separate, more-privileged role for `pgkeeper restore`, not the backup role.
-- On PostgreSQL 15+, `pg_read_all_data` is a convenient predefined role that
-  grants read on all tables/sequences without per-table grants.
 
-## Secrets never live in the config file
+- `pg_dumpall --globals-only` (the `include_globals: true` option) reads
+  `pg_authid` password hashes and therefore requires superuser on most
+  servers. If you won't grant that, set `include_globals: false` and keep a
+  role-recreation script in configuration management instead — but keep
+  *something*: restoring to a fresh server without roles fails.
+- Restores are a separate concern: run them as an owner/admin role, not as
+  `backup_user`.
 
-The config is committed-safe: passwords come from the environment via ERB.
+## Secrets
 
-```yaml
-password: <%= ENV["PGKEEPER_APP_PASSWORD"] %>
-```
+- **Never commit credentials.** The config is ERB-rendered, so every secret
+  can come from the environment:
+  `password: <%= ENV["PGKEEPER_APP_PASSWORD"] %>`.
+- Alternatively set `pgpass: true` on a database and use a `~/.pgpass` /
+  `PGPASSFILE` file (mode `0600`). PgKeeper then omits `PGPASSWORD` entirely.
+- Credentials are passed to `pg_dump`/`psql` via libpq environment variables,
+  never on the command line — they don't appear in `ps` output.
+- `pgkeeper doctor` output, logs, manifests, and notification payloads never
+  include credential values.
 
-- Prefer a secret manager / orchestrator secrets (Kubernetes, systemd
-  `LoadCredential`, Docker secrets) over plain env vars where you can.
-- `.pgpass` is supported: set `pgpass: true` on a database and PgKeeper won't put
-  a password in the process environment or argv.
-- The example `.gitignore` excludes `pgkeeper.yml`, dumps, and `history.sqlite3`.
+## Encryption at rest
 
-## Encryption before the cloud
-
-Anything leaving your own disk should be encrypted at rest. Enable it *before*
-adding cloud destinations:
+Enable encryption **before** pointing storage at any third-party cloud:
 
 ```yaml
 encryption:
   enabled: true
-  type: aes256gcm
+  type: aes256gcm            # built in (OpenSSL), or `gpg`
   passphrase_env: PGKEEPER_ENCRYPTION_PASSPHRASE
 ```
 
-- AES-256-GCM is authenticated: tampering is detected on decrypt.
-- **Store the passphrase/keyfile separately from the backups.** A backup you
-  can't decrypt is not a backup — but a passphrase stored next to the ciphertext
-  defeats the purpose.
+- AES-256-GCM is authenticated: tampered artifacts fail loudly on decrypt.
+- The manifest records the encryption type; `restore`/`verify` reverse it
+  transparently.
+- Store the passphrase/keyfile somewhere that survives losing the backup host
+  (a password manager, a KMS) — an encrypted backup whose key lived only on
+  the dead server is not a backup.
 
-## Artifact & transport hygiene
+## Artifacts on disk
 
-- Local artifacts are written `0600` (owner-only) via a temp-then-rename.
-- Cloud uploads use TLS and verify the stored size after upload.
-- Restrict who can read the backup destination (bucket policy, directory perms).
-- `pgkeeper doctor` health-checks each destination (e.g. S3 `HeadBucket`) so
-  broken or over-broad credentials surface early.
+- The local storage adapter writes artifacts with mode `0600` and finalizes
+  atomically (temp file + rename + fsync).
+- The run-history SQLite file and lock file live in `workdir`; keep the
+  directory owned by the user PgKeeper runs as, mode `0700` recommended.
+- Retention (`pgkeeper prune`) is the only thing that deletes backups, and it
+  never deletes the newest or last-verified set.
 
-## Reporting
+## Web dashboard
 
-Found a security issue? Please report it privately via the repository's security
-advisory / contact channel rather than a public issue.
+The dashboard (`pgkeeper web`) is designed to be safe to run, but it still
+exposes backup metadata and management actions — treat it like any admin UI:
+
+- **Auth is mandatory.** It refuses to start without `web.auth.token` or
+  `web.auth.username`+`password`. Credentials are compared in constant time.
+  Give the token to browsers as the password of HTTP basic auth, or to
+  scripts as `Authorization: Bearer <token>`.
+- **Loopback by default.** It binds `127.0.0.1`; for remote access put it
+  behind a TLS-terminating reverse proxy rather than binding `0.0.0.0` on the
+  open internet. Basic auth without TLS sends the credential in cleartext.
+- **CSRF-protected.** Every management POST requires a CSRF token plus an
+  explicit confirmation, and runs through the same lock as scheduled runs.
+- **Downloads are allowlisted.** The download endpoint only serves paths the
+  destination's catalog knows about — it cannot be steered at arbitrary files.
+- **No restores.** Restore-from-browser is deliberately not implemented; a
+  restore is too destructive for a web click. Use the CLI runbook
+  ([RESTORE.md](RESTORE.md)).
+
+## Reporting a vulnerability
+
+Open a GitHub security advisory (preferred) or a private report to the
+maintainers. Please do not open public issues for exploitable problems.

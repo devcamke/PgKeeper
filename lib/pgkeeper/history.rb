@@ -67,13 +67,19 @@ module PgKeeper
       rows.map { |h| to_row(h) }
     end
 
+    # Every row recorded under one run id (one row per database), in insertion
+    # order. Powers the dashboard's run-detail page.
+    def runs_for(run_id)
+      query("SELECT * FROM runs WHERE run_id = ? ORDER BY id", [text_param(run_id)]).map { |h| to_row(h) }
+    end
+
     # The most recent +limit+ rows, optionally for one database.
     def recent(limit: 20, database: nil)
       sql = +"SELECT * FROM runs"
       params = []
       if database
         sql << " WHERE database = ?"
-        params << database
+        params << text_param(database)
       end
       sql << " ORDER BY started_at DESC, id DESC LIMIT ?"
       params << limit
@@ -139,6 +145,13 @@ module PgKeeper
       value ? JSON.parse(value) : []
     rescue JSON::ParserError
       []
+    end
+
+    # sqlite3 binds an ASCII-8BIT string as a BLOB, which never equals a TEXT
+    # column — and strings sliced out of a Rack PATH_INFO are binary-encoded.
+    # Normalize query parameters to UTF-8 so lookups match what was written.
+    def text_param(value)
+      value.to_s.dup.force_encoding(Encoding::UTF_8)
     end
   end
 end

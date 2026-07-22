@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><%= h(@title) %> · PgKeeper</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; line-height: 1.5; }
+  header { display: flex; align-items: baseline; gap: 1.5rem; padding: 0.75rem 1.25rem;
+           border-bottom: 1px solid #8884; flex-wrap: wrap; }
+  header .brand { font-weight: 700; font-size: 1.1rem; }
+  nav a { margin-right: 1rem; text-decoration: none; color: inherit; opacity: 0.75; }
+  nav a.active { opacity: 1; font-weight: 600; border-bottom: 2px solid currentColor; }
+  main { padding: 1.25rem; max-width: 72rem; margin: 0 auto; }
+  h1 { font-size: 1.3rem; } h2 { font-size: 1.05rem; margin-top: 1.75rem; }
+  table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 0.35rem 0.6rem; border-bottom: 1px solid #8883; vertical-align: top; }
+  th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.7; }
+  tr:hover td { background: #8881; }
+  .dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; }
+  .dot-green { background: #2da44e; } .dot-yellow { background: #d4a72c; } .dot-red { background: #cf222e; }
+  .ok { color: #2da44e; } .warn { color: #b08800; } .bad { color: #cf222e; }
+  .muted { opacity: 0.65; } .mono { font-family: ui-monospace, monospace; font-size: 0.85em; }
+  .spark { color: #57799c; vertical-align: middle; }
+  .msg { padding: 0.6rem 0.9rem; border: 1px solid #57799c88; border-radius: 6px; margin-bottom: 1rem; }
+  form.action { border: 1px solid #8884; border-radius: 8px; padding: 0.9rem 1.1rem; margin-bottom: 1rem; }
+  form.action h3 { margin: 0 0 0.4rem; font-size: 1rem; }
+  form.action p { margin: 0.25rem 0; font-size: 0.9rem; }
+  button { padding: 0.35rem 0.9rem; border-radius: 6px; border: 1px solid #8886; cursor: pointer; }
+  label { margin-right: 0.9rem; }
+  a { color: #3a6ea5; }
+  pre { background: #8881; padding: 0.7rem; border-radius: 6px; overflow-x: auto; }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">PgKeeper</span>
+  <nav>
+    <a href="/" class="<%= @active == 'overview' ? 'active' : '' %>">Overview</a>
+    <a href="/runs" class="<%= @active == 'runs' || @active == 'run' ? 'active' : '' %>">Runs</a>
+    <a href="/backups" class="<%= @active == 'backups' ? 'active' : '' %>">Backups</a>
+    <a href="/retention" class="<%= @active == 'retention' ? 'active' : '' %>">Retention</a>
+    <a href="/actions" class="<%= @active == 'actions' ? 'active' : '' %>">Actions</a>
+  </nav>
+</header>
+<main>
+<%= @content %>
+</main>
+</body>
+</html>

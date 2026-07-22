@@ -1,40 +1,52 @@
-# Example: PgKeeper running its scheduler alongside a Postgres instance.
+# Example deployment: PgKeeper (daemon + web dashboard) alongside a database.
 #
-#   cp config/pgkeeper.example.yml pgkeeper.yml   # then edit
-#   export PGKEEPER_APP_PASSWORD=...
-#   docker compose -f docker-compose.example.yml up --build
+#   cp docker-compose.example.yml docker-compose.yml
+#   cp config/pgkeeper.example.yml pgkeeper.yml     # edit: databases, schedule, web
+#   export PGKEEPER_APP_PASSWORD=... PGKEEPER_WEB_TOKEN=...
+#   docker compose up -d
 #
-# The pgkeeper service runs `pgkeeper daemon`, firing backups on the schedule in
-# your config. Run one-offs with:
-#   docker compose -f docker-compose.example.yml run --rm pgkeeper backup -c /app/pgkeeper.yml
+# Notes for the pgkeeper.yml used here:
+#   * database host is the compose service name (postgres below),
+#   * `web.bind: 0.0.0.0` — inside a container the dashboard must bind all
+#     interfaces for the published port to reach it; the host-side publish
+#     below still restricts access to 127.0.0.1 (reverse-proxy for remote use),
+#   * `web.auth.token: <%= ENV["PGKEEPER_WEB_TOKEN"] %>` — the dashboard
+#     refuses to start without credentials.
+
 services:
-  db:
+  postgres:
     image: postgres:16
     environment:
       POSTGRES_USER: app
-      POSTGRES_DB: app
-      POSTGRES_PASSWORD: ${PGKEEPER_APP_PASSWORD:-example}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: app_production
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app"]
+      test: ["CMD", "pg_isready", "-U", "app"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   pgkeeper:
     build: .
+    command: daemon-with-web
     depends_on:
-      db:
+      postgres:
         condition: service_healthy
     environment:
-      # Secrets come from the environment; never bake them into the image.
-      PGKEEPER_APP_PASSWORD: ${PGKEEPER_APP_PASSWORD:-example}
+      # Secrets flow through the environment into the config's ERB
+      # interpolation — never write them into pgkeeper.yml itself.
+      PGKEEPER_APP_PASSWORD: ${PGKEEPER_APP_PASSWORD:?set PGKEEPER_APP_PASSWORD}
+      PGKEEPER_WEB_TOKEN: ${PGKEEPER_WEB_TOKEN:?set PGKEEPER_WEB_TOKEN}
     volumes:
-      # Mount your config read-only, and persist backups on a named volume.
-      - ./pgkeeper.yml:/app/pgkeeper.yml:ro
+      - ./pgkeeper.yml:/etc/pgkeeper/pgkeeper.yml:ro
       - backups:/var/backups/pgkeeper
-    command: ["daemon", "--config", "/app/pgkeeper.yml"]
+    ports:
+      # Dashboard on the host's loopback only. Remove the 127.0.0.1 prefix
+      # only behind TLS + a reverse proxy.
+      - "127.0.0.1:8321:8321"
+    restart: unless-stopped
 
 volumes:
   pgdata:
