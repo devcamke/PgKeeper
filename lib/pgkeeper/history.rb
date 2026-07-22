@@ -73,6 +73,18 @@ module PgKeeper
       query("SELECT * FROM runs WHERE run_id = ? ORDER BY id", [text_param(run_id)]).map { |h| to_row(h) }
     end
 
+    # Total-bytes of the most recent successful runs for one database, newest
+    # first. Feeds backup-size anomaly detection; skips zero/failed runs so the
+    # baseline reflects real dumps only.
+    def recent_success_sizes(database, limit: 5)
+      rows = query(<<~SQL, [text_param(database), limit])
+        SELECT total_bytes FROM runs
+        WHERE database = ? AND status = 'success' AND total_bytes > 0
+        ORDER BY started_at DESC, id DESC LIMIT ?
+      SQL
+      rows.map { |h| h["total_bytes"].to_i }
+    end
+
     # The most recent +limit+ rows, optionally for one database.
     def recent(limit: 20, database: nil)
       sql = +"SELECT * FROM runs"

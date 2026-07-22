@@ -87,7 +87,7 @@ module PgKeeper
     # Refuse to clobber a non-empty database unless the caller forces it.
     def guard_target!(connection, target_db, force)
       env = connection.libpq_env.merge("PGDATABASE" => target_db)
-      out, status = Open3.capture2e(env, "psql", "-XtAc", <<~SQL)
+      out, _err, status = Subprocess.capture3(env, "psql", "-XtAc", <<~SQL, timeout: query_timeout)
         SELECT count(*) FROM information_schema.tables
         WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
       SQL
@@ -117,13 +117,15 @@ module PgKeeper
     end
 
     def run!(env, tool, *)
-      _out, err, status = Open3.capture3(env, tool, *)
+      _out, err, status = Subprocess.capture3(env, tool, *, timeout: restore_timeout)
       return if status.success?
 
       raise Error, "#{tool} failed (#{status.exitstatus}): #{err.strip}"
-    rescue Errno::ENOENT
-      raise EnvironmentError, "#{tool} not found on PATH"
     end
+
+    def restore_timeout = @config.timeout(:restore)
+
+    def query_timeout = @config.timeout(:query)
 
     def strip_suffix(path, ext)
       suffix = ".#{ext}"

@@ -109,7 +109,8 @@ module PgKeeper
         body = File.read(materialized[:path], 4096)
         body.strip.empty? ? "plain dump is empty" : :ok
       else
-        _out, err, status = Open3.capture3("pg_restore", "--list", materialized[:path])
+        _out, err, status = Subprocess.capture3({}, "pg_restore", "--list", materialized[:path],
+                                                timeout: timeout(:query))
         status.success? ? :ok : "pg_restore --list failed: #{err.strip.lines.last&.strip}"
       end
     end
@@ -142,12 +143,18 @@ module PgKeeper
       nil
     end
 
+    # Restore strictly: any error must fail verification. --exit-on-error is the
+    # pg_restore analogue of psql's ON_ERROR_STOP; without it pg_restore logs
+    # errors, keeps going, and exits 0, so a partially-broken custom-format dump
+    # would falsely verify.
     def restore_into(connection, scratch, materialized)
       env = connection.libpq_env.merge("PGDATABASE" => scratch)
       if materialized[:format] == "plain"
-        capture!(env, "psql", "--no-password", "-v", "ON_ERROR_STOP=1", "-f", materialized[:path])
+        capture!(env, "psql", "--no-password", "-v", "ON_ERROR_STOP=1", "-f", materialized[:path],
+                 timeout: timeout(:verify))
       else
-        capture!(env, "pg_restore", "--no-password", "--dbname=#{scratch}", materialized[:path])
+        capture!(env, "pg_restore", "--no-password", "--exit-on-error", "--dbname=#{scratch}",
+                 materialized[:path], timeout: timeout(:verify))
       end
     end
 
@@ -156,10 +163,12 @@ module PgKeeper
     # result is a live, queryable database. An empty source (zero user tables)
     # is a perfectly valid backup, so table count is logged, not required.
     def sanity_query(admin, scratch)
-      out, status = Open3.capture2e(admin.merge("PGDATABASE" => scratch), "psql", "-XtAc", <<~SQL)
+      sql = <<~SQL
         SELECT count(*) FROM information_schema.tables
         WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
       SQL
+      out, _err, status = Subprocess.capture3(admin.merge("PGDATABASE" => scratch), "psql", "-XtAc", sql,
+                                              timeout: timeout(:query))
       return "restored database is not queryable" unless status.success?
 
       @logger.debug("deep verify sanity query", scratch: scratch, user_tables: out.strip.to_i)
@@ -187,15 +196,16 @@ module PgKeeper
     end
 
     def run_sql!(env, sql)
-      capture!(env.merge("PGDATABASE" => env["PGDATABASE"] || "postgres"), "psql", "-XtAc", sql)
+      capture!(env.merge("PGDATABASE" => env["PGDATABASE"] || "postgres"), "psql", "-XtAc", sql,
+               timeout: timeout(:query))
     end
 
-    def capture!(env, tool, *)
-      _out, err, status = Open3.capture3(env, tool, *)
+    def capture!(env, tool, *, timeout: nil)
+      _out, err, status = Subprocess.capture3(env, tool, *, timeout: timeout)
       raise Error, "#{tool} failed: #{err.strip.lines.last&.strip}" unless status.success?
-    rescue Errno::ENOENT
-      raise EnvironmentError, "#{tool} not found on PATH"
     end
+
+    def timeout(kind) = @config.timeout(kind)
 
     def result(set, tier, status, detail)
       Result.new(database: set.database, label: set.label, tier: TIER_NAME[tier], status: status, detail: detail)

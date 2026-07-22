@@ -275,6 +275,7 @@ module PgKeeper
         glyph, color = result.success? ? ["✓", :green] : ["!", :yellow]
         say "#{glyph} #{result.database} (#{result.duration_seconds}s)", color
         result.artifacts.each { |a| print_artifact(a) }
+        result.warnings.each { |w| say "    ⚠ #{w}", :yellow }
       end
 
       def print_artifact(artifact)

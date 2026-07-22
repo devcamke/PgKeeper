@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
 require "open3"
+require_relative "../subprocess"
 
 module PgKeeper
   # Wrappers around the PostgreSQL dump utilities. PgKeeper never reimplements
   # dumping — it shells out to the battle-tested +pg_dump+/+pg_dumpall+ binaries
-  # via +Open3+, streaming their stderr into the structured log.
+  # via {Subprocess}, streaming their stderr into the structured log and
+  # enforcing a wall-clock deadline so a hung dump can't block a run forever.
   module Dump
     # Shared helpers for shelling out to a dump tool.
     module Runner
@@ -20,20 +22,13 @@ module PgKeeper
       end
 
       # Run +tool+ with +args+, streaming stderr to +logger+. Raises {DumpError}
-      # on a non-zero exit, carrying the captured stderr.
-      def run!(tool, args, env:, logger:, label: tool)
+      # on a non-zero exit (carrying the captured stderr), or {TimeoutError} if
+      # +timeout+ seconds elapse first.
+      def run!(tool, args, env:, logger:, label: tool, timeout: nil)
         logger.debug("running #{label}", argv: ([tool] + args).join(" "))
-        stderr_buf = +""
 
-        status = Open3.popen3(env, tool, *args) do |stdin, stdout, stderr, wait|
-          stdin.close
-          drain = Thread.new { stdout.read }
-          stderr.each_line do |line|
-            stderr_buf << line
-            logger.debug(label, stderr: line.chomp)
-          end
-          drain.join
-          wait.value
+        _out, stderr_buf, status = Subprocess.stream(env, tool, *args, timeout: timeout, label: label) do |line|
+          logger.debug(label, stderr: line.chomp)
         end
 
         return if status.success?
@@ -43,8 +38,6 @@ module PgKeeper
           stderr: stderr_buf,
           exit_status: status.exitstatus
         )
-      rescue Errno::ENOENT
-        raise EnvironmentError, "#{tool} not found on PATH"
       end
     end
 
@@ -58,11 +51,12 @@ module PgKeeper
 
       attr_reader :db
 
-      def initialize(db, logger: PgKeeper.logger, jobs: nil, compress: nil)
+      def initialize(db, logger: PgKeeper.logger, jobs: nil, compress: nil, timeout: nil)
         @db = db
         @logger = logger
         @jobs = jobs
         @compress = compress
+        @timeout = timeout
       end
 
       # Filename extension appropriate for the configured dump format.
@@ -83,7 +77,8 @@ module PgKeeper
       # Run the dump, writing to +to+ (a file path, or a directory path for
       # +directory+ format). Returns +to+.
       def dump(to:)
-        Runner.run!("pg_dump", build_args(to), env: @db.libpq_env, logger: @logger, label: "pg_dump")
+        Runner.run!("pg_dump", build_args(to), env: @db.libpq_env, logger: @logger,
+                                               label: "pg_dump", timeout: @timeout)
         to
       end
 

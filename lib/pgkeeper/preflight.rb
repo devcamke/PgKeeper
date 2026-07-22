@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "open3"
+require_relative "subprocess"
 
 module PgKeeper
   # Pre-dump disk-space guard. Refuses to start a dump we probably can't fit,
@@ -12,9 +13,10 @@ module PgKeeper
   # unreachable) it falls back to the floor rather than blocking the run on a
   # number it doesn't have.
   class Preflight
-    def initialize(min_free_bytes:, scratch_factor: 1.5)
+    def initialize(min_free_bytes:, scratch_factor: 1.5, query_timeout: nil)
       @min_free_bytes = min_free_bytes
       @scratch_factor = scratch_factor
+      @query_timeout = query_timeout
     end
 
     # Raise {PreflightError} unless +dir+ has room for a dump of +db+. A nil
@@ -45,10 +47,12 @@ module PgKeeper
     # upper bound on the dump, which drops bloat and stores indexes as DDL rather
     # than data. Returns nil when psql is unavailable or the query fails.
     def estimated_database_bytes(db)
-      # capture2e keeps psql's connection errors out of the operator's terminal;
-      # on failure the status is non-zero and we bail before parsing.
-      out, status = Open3.capture2e(db.libpq_env, "psql", "-XtAc",
-                                    "SELECT pg_database_size(current_database())")
+      # A bounded query keeps a hung/unreachable server from stalling the
+      # preflight; on any failure the status is non-zero and we bail before
+      # parsing rather than blocking the run on a number we don't have.
+      out, _err, status = Subprocess.capture3(db.libpq_env, "psql", "-XtAc",
+                                              "SELECT pg_database_size(current_database())",
+                                              timeout: @query_timeout)
       return nil unless status.success?
 
       value = out.strip
@@ -58,7 +62,7 @@ module PgKeeper
     end
 
     def free_bytes(path)
-      out, status = Open3.capture2("df", "-Pk", path)
+      out, _err, status = Subprocess.capture3({}, "df", "-Pk", path, timeout: @query_timeout)
       return nil unless status.success?
 
       Integer(out.lines[1].split[3]) * 1024

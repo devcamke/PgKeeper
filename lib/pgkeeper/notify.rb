@@ -45,13 +45,24 @@ module PgKeeper
 
       def success? = event == :success
 
+      # Non-fatal advisories (e.g. backup-size anomalies) raised across the run.
+      def warnings
+        report.results.flat_map { |r| Array(r.warnings).map { |w| [r.database, w] } }
+      end
+
       def subject
-        "PgKeeper backup #{event.to_s.upcase} on #{hostname} " \
-          "(#{report.succeeded.length} ok, #{report.partial.length} partial, #{report.failed.length} failed)"
+        base = "PgKeeper backup #{event.to_s.upcase} on #{hostname} " \
+               "(#{report.succeeded.length} ok, #{report.partial.length} partial, #{report.failed.length} failed"
+        base + (warnings.empty? ? ")" : ", #{warnings.length} warning)")
       end
 
       def to_text
         lines = [subject, "run: #{run_id}", "started: #{started_at.iso8601}  finished: #{finished_at.iso8601}", ""]
+        unless warnings.empty?
+          lines << "WARNINGS:"
+          warnings.each { |db, w| lines << "  ! #{db}: #{w}" }
+          lines << ""
+        end
         report.results.each { |r| lines.concat(text_lines_for(r)) }
         lines.join("\n")
       end
@@ -62,11 +73,18 @@ module PgKeeper
           <h2>#{subject}</h2>
           <p>run <code>#{run_id}</code><br>
           started #{started_at.iso8601} &middot; finished #{finished_at.iso8601}</p>
-          <table border="1" cellpadding="6" cellspacing="0">
+          #{warnings_html}<table border="1" cellpadding="6" cellspacing="0">
             <tr><th>Database</th><th>Status</th><th>Duration</th><th>Artifacts</th><th>Detail</th></tr>
             #{rows}
           </table>
         HTML
+      end
+
+      def warnings_html
+        return "" if warnings.empty?
+
+        items = warnings.map { |db, w| "<li><strong>#{escape(db)}</strong>: #{escape(w)}</li>" }.join
+        %(<div style="color:#b45309"><strong>Warnings</strong><ul>#{items}</ul></div>\n)
       end
 
       def to_payload
@@ -75,7 +93,9 @@ module PgKeeper
           "started_at" => started_at.iso8601, "finished_at" => finished_at.iso8601,
           "summary" => { "succeeded" => report.succeeded.length,
                          "partial" => report.partial.length,
-                         "failed" => report.failed.length },
+                         "failed" => report.failed.length,
+                         "warnings" => warnings.length },
+          "warnings" => warnings.map { |db, w| { "database" => db, "message" => w } },
           "databases" => report.results.map { |r| database_payload(r) }
         }
       end
@@ -124,6 +144,7 @@ module PgKeeper
           "database" => result.database, "status" => result.status.to_s,
           "duration_seconds" => result.duration_seconds,
           "error" => result.error&.message,
+          "warnings" => Array(result.warnings),
           "artifacts" => result.artifacts.map do |a|
             { "kind" => a[:kind], "size_bytes" => a[:size_bytes],
               "compression" => a[:compression], "encryption" => a[:encryption],

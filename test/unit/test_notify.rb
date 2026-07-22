@@ -47,6 +47,34 @@ module PgKeeper
       assert_equal :failure, failure_summary.event
     end
 
+    def warned_summary
+      r = result("app", :success)
+      r.warnings << "backup shrank 60% vs recent median"
+      summary(r)
+    end
+
+    def test_warnings_surface_in_subject_text_html_and_payload
+      s = warned_summary
+
+      assert_equal [["app", "backup shrank 60% vs recent median"]], s.warnings
+      assert_includes s.subject, "1 warning"
+      assert_includes s.to_text, "backup shrank 60% vs recent median"
+      assert_includes s.to_html, "backup shrank 60% vs recent median"
+
+      payload = s.to_payload
+
+      assert_equal 1, payload["summary"]["warnings"]
+      assert_equal "app", payload["warnings"].first["database"]
+    end
+
+    def test_no_warning_noise_when_none
+      s = success_summary
+
+      assert_empty s.warnings
+      refute_includes s.subject, "warning"
+      refute_includes s.to_text, "WARNINGS:"
+    end
+
     def test_text_and_html_include_key_facts
       text = success_summary.to_text
 
