@@ -96,6 +96,7 @@ module PgKeeper
         return forbidden("invalid or missing CSRF token") unless csrf_ok?(request)
         return redirect_msg("confirmation checkbox is required — nothing was started") unless confirmed?(request)
 
+        @logger.info("dashboard action requested", caller: caller_name(request), action: request.path_info)
         case request.path_info
         when "/actions/backup" then act_backup(request)
         when "/actions/verify" then act_verify(request)

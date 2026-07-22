@@ -192,6 +192,13 @@ notifications:
 #   port: 8321
 #   auth:
 #     token: <%= ENV["PGKEEPER_WEB_TOKEN"] %>
+#     # ... or issue a separate token per caller, each independently revocable
+#     # (drop the entry and restart). The caller's name is logged with every
+#     # action it triggers. Required for the remote-trigger API.
+#     # tokens:
+#     #   ci:          <%= ENV["PGKEEPER_TOKEN_CI"] %>
+#     #   backups-bot: <%= ENV["PGKEEPER_TOKEN_BOT"] %>
+#     #   alice:       <%= ENV["PGKEEPER_TOKEN_ALICE"] %>
 #     # ... or basic-auth credentials instead of a token:
 #     # username: ops
 #     # password: <%= ENV["PGKEEPER_WEB_PASSWORD"] %>

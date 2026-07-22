@@ -79,9 +79,33 @@ available) rather than silently skipping a copy.
 
 `pgkeeper web` exposes a small JSON API for remote triggering, behind the same
 auth as the dashboard. It requires a **token** credential — set `web.auth.token`
-(browser basic-auth can't reach these endpoints). Pass the token as a Bearer
-credential; that header is also what protects the API from cross-site requests,
-so these endpoints need no CSRF token or confirmation checkbox.
+or one or more `web.auth.tokens` (browser basic-auth can't reach these
+endpoints). Pass the token as a Bearer credential; that header is also what
+protects the API from cross-site requests, so these endpoints need no CSRF token
+or confirmation checkbox.
+
+### One token per caller (revocable)
+
+Rather than share one secret, issue a **named token per caller** so any one can
+be revoked without disrupting the others. Each caller's name is logged with
+every action it triggers, so the history shows *who* ran *what*:
+
+```yaml
+web:
+  auth:
+    tokens:
+      ci:          <%= ENV["PGKEEPER_TOKEN_CI"] %>
+      backups-bot: <%= ENV["PGKEEPER_TOKEN_BOT"] %>
+      alice:       <%= ENV["PGKEEPER_TOKEN_ALICE"] %>
+```
+
+Each caller sends *its own* token as the Bearer credential — the endpoints and
+payloads are identical. To **revoke** one, delete its entry (or unset its
+environment variable) and restart the dashboard; every other token keeps
+working. A single `token:` and a `tokens:` map may both be present, and a token
+also works as a browser basic-auth password (any username). Mint tokens with
+`openssl rand -hex 32` (or `ruby -rsecurerandom -e 'puts SecureRandom.hex(32)'`)
+and keep them in the environment, never in the committed config.
 
 ### Trigger a backup
 

@@ -42,6 +42,7 @@ module PgKeeper
       authed = Auth.new(
         App.new(config, logger: logger),
         token: presence(auth["token"]),
+        tokens: token_map(auth["tokens"]),
         username: presence(auth["username"]),
         password: presence(auth["password"])
       )
@@ -78,6 +79,17 @@ module PgKeeper
 
     def presence(value)
       value.nil? || value.to_s.empty? ? nil : value.to_s
+    end
+
+    # Presence-filter a `tokens:` map (name => secret), dropping blank secrets
+    # so an unset environment variable never becomes a usable empty token.
+    def token_map(raw)
+      return nil unless raw.is_a?(Hash)
+
+      raw.each_with_object({}) do |(name, secret), acc|
+        value = presence(secret)
+        acc[name.to_s] = value if value
+      end
     end
   end
 end

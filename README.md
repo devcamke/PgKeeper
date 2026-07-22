@@ -110,8 +110,9 @@ destination** independently. Every run is recorded to a SQLite history that powe
     concurrent pipeline. Restores are deliberately CLI-only.
   - **Remote-trigger API**: token-authenticated `POST /api/actions/{backup,verify,prune}`
     kicks off the same jobs from a script, webhook, or phone shortcut — choosing databases
-    and destinations per call — and returns a job id to poll at `GET /api/jobs/<id>`. See
-    [docs/REMOTE-API.md](docs/REMOTE-API.md).
+    and destinations per call — and returns a job id to poll at `GET /api/jobs/<id>`. Issue
+    a **revocable token per caller** (`web.auth.tokens`) and each action is logged with the
+    caller's name. See [docs/REMOTE-API.md](docs/REMOTE-API.md).
   - **JSON API & metrics**: `/api/status`, `/api/runs`, and `/api/destinations` for
     external monitors, plus a Prometheus `/metrics` endpoint (last run/success timestamp,
     backup size, duration, success per database). Unauthenticated `/healthz` and

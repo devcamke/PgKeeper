@@ -79,15 +79,23 @@ encryption:
 The dashboard (`pgkeeper web`) is designed to be safe to run, but it still
 exposes backup metadata and management actions — treat it like any admin UI:
 
-- **Auth is mandatory.** It refuses to start without `web.auth.token` or
-  `web.auth.username`+`password`. Credentials are compared in constant time.
-  Give the token to browsers as the password of HTTP basic auth, or to
-  scripts as `Authorization: Bearer <token>`.
+- **Auth is mandatory.** It refuses to start without `web.auth.token`, a
+  `web.auth.tokens` map, or `web.auth.username`+`password`. Credentials are
+  compared in constant time. Give a token to browsers as the password of HTTP
+  basic auth, or to scripts as `Authorization: Bearer <token>`.
+- **One token per caller.** Prefer `web.auth.tokens` (name => secret) over a
+  single shared token: each caller gets its own, revoked independently by
+  deleting its entry and restarting, and the caller's name is logged with every
+  action it triggers — so the log answers "who ran this". See
+  [REMOTE-API.md](REMOTE-API.md).
 - **Loopback by default.** It binds `127.0.0.1`; for remote access put it
   behind a TLS-terminating reverse proxy rather than binding `0.0.0.0` on the
-  open internet. Basic auth without TLS sends the credential in cleartext.
-- **CSRF-protected.** Every management POST requires a CSRF token plus an
-  explicit confirmation, and runs through the same lock as scheduled runs.
+  open internet. Basic auth (and a Bearer token) without TLS sends the
+  credential in cleartext.
+- **CSRF-protected.** Every browser management POST requires a CSRF token plus
+  an explicit confirmation, and runs through the same lock as scheduled runs.
+  The token-authenticated action API skips those browser-only guards because a
+  Bearer header can't ride along on a cross-site request in the first place.
 - **Downloads are allowlisted.** The download endpoint only serves paths the
   destination's catalog knows about — it cannot be steered at arbitrary files.
 - **No restores.** Restore-from-browser is deliberately not implemented; a

@@ -439,9 +439,23 @@ module PgKeeper
       return if auth.nil?
       return problem("web.auth must be a mapping") unless auth.is_a?(Hash)
 
-      reject_unknown_keys(auth, %w[token username password], "web.auth")
-      auth.each do |key, value|
+      reject_unknown_keys(auth, %w[token tokens username password], "web.auth")
+      %w[token username password].each do |key|
+        value = auth[key]
         problem("web.auth.#{key} must be a string") unless value.nil? || value.is_a?(String)
+      end
+      validate_web_auth_tokens(auth["tokens"])
+    end
+
+    # `tokens:` is a map of caller name => secret, so each caller can be revoked
+    # on its own. Names must be non-empty and secrets must be strings.
+    def validate_web_auth_tokens(tokens)
+      return if tokens.nil?
+      return problem("web.auth.tokens must be a mapping of name => token") unless tokens.is_a?(Hash)
+
+      tokens.each do |name, secret|
+        problem("web.auth.tokens has an empty token name") if name.to_s.strip.empty?
+        problem("web.auth.tokens.#{name} must be a string") unless secret.is_a?(String)
       end
     end
 

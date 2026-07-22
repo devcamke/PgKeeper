@@ -24,6 +24,12 @@ All notable changes to PgKeeper. Versions map to the milestones in
   `GET /api/destinations` returns the selectable tokens. The dashboard's Actions
   page gains a per-destination picker and copy-ready `curl` recipes. See
   [docs/REMOTE-API.md](docs/REMOTE-API.md).
+- **Per-caller API tokens.** `web.auth.tokens` takes a map of name => secret, so
+  each caller (CI, a bot, a teammate) gets its own token, revoked independently
+  by dropping its entry and restarting. The authenticating caller's name is
+  recorded on the request and logged with every action it triggers, giving a
+  who-ran-what audit trail. The single `web.auth.token` and basic-auth pair
+  still work and may coexist with a `tokens` map.
 - **Subprocess timeouts (production safety).** Every `pg_dump`/`pg_dumpall`/
   `pg_restore`/`psql`/`df` call now runs under a configurable wall-clock deadline
   (new `PgKeeper::Subprocess`). On expiry the child's whole process group is

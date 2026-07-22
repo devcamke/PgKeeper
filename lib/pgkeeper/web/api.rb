@@ -24,12 +24,20 @@ module PgKeeper
         end
 
         body = json_body(request)
+        @logger.info("api action requested", caller: caller_name(request), action: request.path_info)
         case request.path_info
         when "/api/actions/backup" then api_backup(request, body)
         when "/api/actions/verify" then api_verify(request, body)
         when "/api/actions/prune" then api_prune(request, body)
         else api_error(404, "unknown API action")
         end
+      end
+
+      # The authenticated caller recorded by the Auth middleware (a token name
+      # or basic-auth username), for audit lines. "unknown" when the app is
+      # driven without the middleware (tests) or the key is absent.
+      def caller_name(request)
+        presence(request.get_header(Auth::CALLER_KEY)) || "unknown"
       end
 
       def api_backup(request, body)

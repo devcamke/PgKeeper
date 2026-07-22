@@ -66,9 +66,10 @@ job list below. Restores are CLI-only by design.</p>
 
 <h2>Trigger remotely</h2>
 <p class="muted">Kick off the same actions from a script, webhook, cron on another host, or a phone
-shortcut. Authenticate with the dashboard token as a Bearer credential; the call returns a job id
-you can poll. Requires a <span class="mono">web.auth.token</span> (browser basic-auth can't reach
-these endpoints).</p>
+shortcut. Authenticate with a dashboard token as a Bearer credential; the call returns a job id
+you can poll. Requires a <span class="mono">web.auth.token</span> or a
+<span class="mono">web.auth.tokens</span> entry (browser basic-auth can't reach these endpoints).
+Issue one token per caller so each can be revoked on its own.</p>
 <pre class="mono"># Back up one database to just the NAS and Google Drive:
 curl -sS -X POST https://HOST/api/actions/backup \
   -H "Authorization: Bearer $PGKEEPER_WEB_TOKEN" \

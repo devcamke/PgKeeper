@@ -274,6 +274,10 @@ pgkeeper restore 2026-07-21 --database app_production \
 web:
   auth:
     token: <%= ENV["PGKEEPER_WEB_TOKEN"] %>   # or username: + password:
+    # ...or a revocable token per caller (name is logged with each action):
+    # tokens:
+    #   ci:          <%= ENV["PGKEEPER_TOKEN_CI"] %>
+    #   backups-bot: <%= ENV["PGKEEPER_TOKEN_BOT"] %>
   # bind: 127.0.0.1     # default
   # port: 8321          # default
 ```
