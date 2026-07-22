@@ -54,11 +54,12 @@ module PgKeeper
     # Per-database dump context, threaded through the pipeline as one value.
     DumpContext = Struct.new(:db, :staging, :timestamp, :began_at, :log, keyword_init: true)
 
-    def initialize(config, logger: PgKeeper.logger, clock: Time, min_free_bytes: 100 * 1024 * 1024)
+    def initialize(config, logger: PgKeeper.logger, clock: Time, min_free_bytes: 100 * 1024 * 1024,
+                   scratch_factor: 1.5)
       @config = config
       @logger = logger
       @clock = clock
-      @min_free_bytes = min_free_bytes
+      @preflight = Preflight.new(min_free_bytes: min_free_bytes, scratch_factor: scratch_factor)
     end
 
     # Run backups for the selected databases (all, or the subset named in
@@ -151,7 +152,7 @@ module PgKeeper
       began_at = @clock.now.utc
       log.info("dumping database")
 
-      preflight!(workdir)
+      @preflight.check!(db, workdir)
       staging = Dir.mktmpdir(".pgkeeper-staging-", workdir)
       artifacts = perform_dump(db, staging, began_at, log)
 
@@ -284,22 +285,6 @@ module PgKeeper
         ctx.log.error("destination failed", destination: adapter.name, error: e.message)
         Destination.new(name: adapter.name, status: :failed, error: e.message)
       end
-    end
-
-    def preflight!(dir)
-      free = free_bytes(dir)
-      return if free.nil? || free >= @min_free_bytes
-
-      raise PreflightError, "insufficient free space at #{dir}: #{free} bytes free, need #{@min_free_bytes}"
-    end
-
-    def free_bytes(path)
-      out, status = Open3.capture2("df", "-Pk", path)
-      return nil unless status.success?
-
-      Integer(out.lines[1].split[3]) * 1024
-    rescue StandardError
-      nil
     end
 
     def server_version(db)

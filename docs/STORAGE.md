@@ -24,6 +24,11 @@ provider.
 Requires the optional `aws-sdk-s3` gem (`gem install aws-sdk-s3`, or add it to
 your bundle). PgKeeper lazy-loads it, so a local-only install stays lean.
 
+Large artifacts upload via **multipart** (parallel parts, each retried
+independently); files below 100 MiB go in a single request. This streams the
+file part-by-part — memory stays flat — and lifts the 5 GiB ceiling that a
+single `PutObject` would impose, so multi-gigabyte dumps upload cleanly.
+
 ```yaml
 storage:
   - type: s3
@@ -59,7 +64,7 @@ existence check:
   "Statement": [
     { "Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": "arn:aws:s3:::my-pgkeeper-backups" },
     { "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject", "s3:AbortMultipartUpload"],
       "Resource": "arn:aws:s3:::my-pgkeeper-backups/*" }
   ]
 }
