@@ -71,9 +71,12 @@ S3 SDK, and the dashboard.
 ## 4. Quickstart: first backup in five minutes
 
 ```sh
-# 1. Start from the annotated example config.
-cp config/pgkeeper.example.yml pgkeeper.yml
-$EDITOR pgkeeper.yml                      # databases, storage path, schedule
+# 1. Write a config. The wizard tests the connection, sets a schedule, and
+#    writes pgkeeper.yml for you (it prints the password env var to export):
+pgkeeper connect
+#    ...or start from the annotated example and edit it by hand:
+# cp config/pgkeeper.example.yml pgkeeper.yml
+# $EDITOR pgkeeper.yml                     # databases, storage path, schedule
 
 # 2. Secrets come from the environment (the config interpolates ENV via ERB).
 export PGKEEPER_APP_PASSWORD=...
@@ -189,6 +192,7 @@ destinations failed) · **2** total failure. Cron and CI can react to them.
 
 | Command | What it does |
 |---|---|
+| `pgkeeper connect` (alias `onboard`) | Onboarding wizard: prompts for a database's connection details, live-tests them, takes a validated backup schedule, and writes/updates `pgkeeper.yml` (passwords as env-var references; an existing file's comments and ERB are preserved). |
 | `pgkeeper doctor` | Checks tools on PATH, config validity, storage health, DB connectivity, and pg_dump-vs-server version drift. Run it after any config change. |
 | `pgkeeper validate` | Loads the config and reports every schema problem at once. |
 | `pgkeeper backup [--only NAME ...] [--destinations TOKEN ...]` | Runs the full pipeline for all (or selected) databases, fanning out to all (or selected) destinations. Lock-guarded — concurrent runs fail loudly instead of colliding. |
@@ -207,8 +211,11 @@ destinations failed) · **2** total failure. Cron and CI can react to them.
 
 ## 7. Scheduling
 
-Set `schedule:` globally and/or per database, then pick the runner that fits
-the host:
+Set `schedule:` globally and/or per database — the `pgkeeper connect` wizard
+takes one interactively (validating it and previewing the next few runs), or set
+it by hand. A schedule accepts cron (`15 3 * * *`), natural language
+(`every day at 03:15`), or a shorthand (`hourly`, `daily`). Then pick the runner
+that fits the host:
 
 **Cron** (simplest):
 

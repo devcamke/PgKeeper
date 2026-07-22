@@ -7,6 +7,20 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **Onboarding wizard (`pgkeeper connect`).** An interactive flow that connects
+  a database and schedules its backups, then writes `pgkeeper.yml`. It collects
+  the connection details, live-tests the credentials with a bounded `psql`
+  round-trip (retry / save-anyway / abort on failure), takes a backup schedule
+  validated through the same parser as the scheduler — with a preview of the
+  next few fire times — and persists the result: a fresh, commented config on a
+  new host, or an appended database entry on an existing one that leaves its
+  comments and `<%= ENV[...] %>` interpolations untouched. Passwords are written
+  as an env-var reference, never inlined, and the wizard prints the exact
+  variable to export. On a fresh config the schedule is global; when appending,
+  it rides on the new database so the others keep their own cadence. `onboard`
+  is an alias. The prompt IO and connection prober are injectable, so the whole
+  flow is unit-tested with no terminal and no live Postgres.
+
 - **Named destinations & per-run destination selection.** Any `storage:` target
   can carry a friendly `name:` (e.g. `nas`, `gdrive`, `onedrive`); a run can be
   scoped to a subset of destinations instead of the full fan-out via

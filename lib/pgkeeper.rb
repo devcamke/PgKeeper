@@ -27,6 +27,9 @@ require "pgkeeper/pruner"
 require "pgkeeper/restore"
 require "pgkeeper/verify"
 require "pgkeeper/doctor"
+require "pgkeeper/prompt"
+require "pgkeeper/config_writer"
+require "pgkeeper/wizard"
 require "pgkeeper/cli"
 
 # PgKeeper is an automated PostgreSQL backup solution.
