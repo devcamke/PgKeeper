@@ -40,13 +40,44 @@ module PgKeeper
       assert_instance_of Storage::S3, build_adapter
     end
 
+    def test_multipart_upload_reassembles_the_whole_object
+      # A 6 MiB payload with a 5 MiB threshold forces the multipart path
+      # (create → two upload_parts → complete); the SDK refuses multipart below
+      # its 5 MiB part minimum. This proves large uploads no longer go through a
+      # single size-capped PUT and that parts reassemble in order.
+      adapter = Storage::S3.with_client(
+        @client, bucket: "backups", prefix: "pgk", logger: null_logger, multipart_threshold: 5 * 1024 * 1024
+      )
+      payload = "0123456789abcdef" * (6 * 1024 * 1024 / 16) # exactly 6 MiB
+      with_local_file(payload) do |src, _dir|
+        result = adapter.upload(src, "db/big.dump")
+
+        assert_equal payload, @store["pgk/db/big.dump"]
+        assert_equal payload.bytesize, result.size_bytes
+      end
+    end
+
     private
 
     def stubbed_client(store)
       client = Aws::S3::Client.new(stub_responses: true, region: "us-east-1")
+      parts = Hash.new { |h, k| h[k] = {} }
       client.stub_responses(:head_bucket, {})
       client.stub_responses(:put_object, lambda { |ctx|
         store[ctx.params[:key]] = read_body(ctx.params[:body])
+        {}
+      })
+      client.stub_responses(:create_multipart_upload, lambda { |ctx|
+        parts[ctx.params[:key]] = {}
+        { upload_id: "mpu-#{ctx.params[:key]}" }
+      })
+      client.stub_responses(:upload_part, lambda { |ctx|
+        parts[ctx.params[:key]][ctx.params[:part_number]] = read_body(ctx.params[:body])
+        { etag: %("etag-#{ctx.params[:part_number]}") }
+      })
+      client.stub_responses(:complete_multipart_upload, lambda { |ctx|
+        key = ctx.params[:key]
+        store[key] = parts.delete(key).sort.map { |_number, data| data }.join
         {}
       })
       client.stub_responses(:get_object, lambda { |ctx|

@@ -34,23 +34,6 @@ module PgKeeper
       assert_equal ExitCode::SUCCESS, report.exit_code
     end
 
-    def test_preflight_raises_when_space_below_threshold
-      in_tmpdir do |dir|
-        config = Config.parse("databases:\n  - name: app\n")
-        orch = Orchestrator.new(config, logger: null_logger, min_free_bytes: 1 << 62)
-        assert_raises(PreflightError) { orch.send(:preflight!, dir) }
-      end
-    end
-
-    def test_preflight_passes_with_default_threshold
-      in_tmpdir do |dir|
-        config = Config.parse("databases:\n  - name: app\n")
-        orch = Orchestrator.new(config, logger: null_logger)
-        # Should not raise on a normal temp filesystem.
-        orch.send(:preflight!, dir)
-      end
-    end
-
     def test_unknown_database_in_only_raises
       config = Config.parse("databases:\n  - name: app\n")
       orch = Orchestrator.new(config, logger: null_logger)

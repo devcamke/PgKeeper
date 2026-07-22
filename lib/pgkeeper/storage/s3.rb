@@ -12,14 +12,23 @@ module PgKeeper
     # lazily and tells the user to install it if it's missing, so a local-only
     # PgKeeper install stays lean.
     class S3 < Base
+      # Files at or above this size upload via S3 multipart — parallel parts,
+      # each retried independently. Smaller files go in a single PUT. A plain
+      # PUT is capped at S3's 5 GiB single-request limit, which real database
+      # dumps routinely exceed, so without multipart large backups can't be
+      # stored at all.
+      MULTIPART_THRESHOLD = 100 * 1024 * 1024
+
       attr_reader :bucket, :prefix
 
       def initialize(bucket:, region: nil, prefix: "", endpoint: nil,
-                     access_key_id: nil, secret_access_key: nil, force_path_style: false, **)
+                     access_key_id: nil, secret_access_key: nil, force_path_style: false,
+                     multipart_threshold: MULTIPART_THRESHOLD, **)
         super(**)
         require_sdk!
         @bucket = bucket
         @prefix = normalize_prefix(prefix)
+        @multipart_threshold = multipart_threshold
         @client = build_client(region, endpoint, access_key_id, secret_access_key, force_path_style)
       end
 
@@ -42,19 +51,28 @@ module PgKeeper
       private
 
       def init_with_client(client, bucket:, prefix: "", logger: PgKeeper.logger,
-                           retry_attempts: DEFAULT_ATTEMPTS, retry_base: 0.5)
+                           retry_attempts: DEFAULT_ATTEMPTS, retry_base: 0.5,
+                           multipart_threshold: MULTIPART_THRESHOLD)
         @logger = logger
         @retry_attempts = retry_attempts
         @retry_base = retry_base
         @client = client
         @bucket = bucket
         @prefix = normalize_prefix(prefix)
+        @multipart_threshold = multipart_threshold
       end
 
+      # The SDK's transfer manager picks the transfer method by size: a single
+      # put_object below the threshold, automatic multipart above it. Multipart
+      # streams the file part-by-part, so memory stays flat and objects larger
+      # than the 5 GiB single-PUT limit go through fine.
       def do_upload(local_path, remote_path)
-        File.open(local_path, "rb") do |body|
-          @client.put_object(bucket: @bucket, key: key(remote_path), body: body)
-        end
+        transfer_manager.upload_file(local_path, bucket: @bucket, key: key(remote_path),
+                                                 multipart_threshold: @multipart_threshold)
+      end
+
+      def transfer_manager
+        @transfer_manager ||= Aws::S3::TransferManager.new(client: @client)
       end
 
       def do_download(remote_path, local_path)
