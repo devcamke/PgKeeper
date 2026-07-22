@@ -22,13 +22,20 @@ Gem::Specification.new do |spec|
     "lib/**/*.erb",
     "bin/*",
     "config/*.example.yml",
+    "docs/*.md",
     "README.md",
     "PLAN.md",
+    "CHANGELOG.md",
     "LICENSE*"
   ]
   spec.bindir      = "bin"
   spec.executables = ["pgkeeper"]
   spec.require_paths = ["lib"]
+
+  spec.metadata["homepage_uri"] = spec.homepage
+  spec.metadata["source_code_uri"] = "https://github.com/devcamke/pgkeeper"
+  spec.metadata["changelog_uri"] = "https://github.com/devcamke/pgkeeper/blob/main/CHANGELOG.md"
+  spec.metadata["bug_tracker_uri"] = "https://github.com/devcamke/pgkeeper/issues"
 
   spec.add_dependency "thor", "~> 1.3"
 
