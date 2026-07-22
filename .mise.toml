@@ -4,4 +4,4 @@
 #   mise exec -- bundle install
 #   mise exec -- bundle exec rake test
 [tools]
-ruby = "4.0.6"
+ruby = "3.3.6"
