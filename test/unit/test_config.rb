@@ -248,5 +248,51 @@ module PgKeeper
 
       assert_equal "app_prod_1", config.database("app/prod:1").slug
     end
+
+    def test_web_block_is_validated_but_optional
+      config = Config.parse(<<~YAML)
+        databases:
+          - name: app
+        web:
+          bind: 0.0.0.0
+          port: 9000
+          auth:
+            token: sekrit
+      YAML
+
+      assert_equal({ "bind" => "0.0.0.0", "port" => 9000, "auth" => { "token" => "sekrit" } }, config.web)
+      assert_empty Config.parse("databases:\n  - name: app").web, "web is optional"
+    end
+
+    def test_web_rejects_bad_port_and_unknown_keys
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          databases:
+            - name: app
+          web:
+            port: 99999
+            listen: nope
+            auth:
+              tokenn: typo
+        YAML
+      end
+
+      assert(err.problems.any? { |p| p.include?("web.port") })
+      assert(err.problems.any? { |p| p.include?("web has unknown key") })
+      assert(err.problems.any? { |p| p.include?("web.auth has unknown key") })
+    end
+
+    def test_web_auth_with_unset_env_var_does_not_fail_validation
+      config = Config.parse(<<~YAML)
+        databases:
+          - name: app
+        web:
+          auth:
+            token:
+      YAML
+
+      assert_nil config.web.dig("auth", "token"),
+                 "an unset env var must not break config validation — `pgkeeper web` enforces it"
+    end
   end
 end

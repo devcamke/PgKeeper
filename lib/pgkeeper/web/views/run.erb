@@ -1,0 +1,25 @@
+<h1>Run <span class="mono"><%= h(@run_id) %></span></h1>
+<%- @rows.each do |row| -%>
+<h2><%= h(row.database) %> — <span class="<%= status_class(row.status) %>"><%= h(row.status) %></span></h2>
+<table>
+  <tr><th>Started</th><th>Finished</th><th>Duration</th><th>Artifacts</th><th>Total size</th></tr>
+  <tr>
+    <td><%= h(fmt_time(row.started_at)) %></td>
+    <td><%= h(fmt_time(row.finished_at)) %></td>
+    <td><%= h(row.duration_seconds) %>s</td>
+    <td><%= h(row.artifact_count) %></td>
+    <td><%= h(human_size(row.total_bytes)) %></td>
+  </tr>
+</table>
+<%- unless Array(row.destinations).empty? -%>
+<p>
+  <%- Array(row.destinations).each do |dest| -%>
+  <span class="mono <%= dest["status"] == "ok" ? "ok" : "bad" %>"><%= h(dest["name"]) %>=<%= h(dest["status"]) %></span>
+  <%- end -%>
+</p>
+<%- end -%>
+<%- if row.error -%>
+<h3>Error</h3>
+<pre><%= h(row.error) %></pre>
+<%- end -%>
+<%- end -%>

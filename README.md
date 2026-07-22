@@ -8,12 +8,17 @@ SharePoint/OneDrive, S3-compatible), enforces retention policies, verifies that 
 are actually restorable, reports status via email, and includes an optional web dashboard
 (`pgkeeper web`) for monitoring backup health and triggering runs.
 
-**Status:** v0.8 (Phases 0–8) is implemented and tested — backups are compressed,
+**Status:** v1.0 (Phases 0–10) is implemented and tested — backups are compressed,
 optionally encrypted, fanned out to multiple destinations, pruned by a retention policy,
 **verifiably restorable**, **reported on** (run-history, email/webhook alerts, dead-man's
-switch), and **scheduled** (cron/systemd installers or a built-in daemon). See
-[PLAN.md](PLAN.md) for the full multi-phase build plan and [docs/RESTORE.md](docs/RESTORE.md)
-for the restore runbook.
+switch), **scheduled** (cron/systemd installers or a built-in daemon), **observable in a
+browser** (`pgkeeper web`), and **deployable with Docker**. See [PLAN.md](PLAN.md) for the
+full multi-phase build plan, [CHANGELOG.md](CHANGELOG.md) for what shipped when, and
+[docs/RESTORE.md](docs/RESTORE.md) for the restore runbook.
+
+> **Known gap (by design, documented):** PgKeeper takes logical dumps — there is no WAL
+> archiving / point-in-time recovery, so a restore loses everything since the last dump.
+> Schedule accordingly; PITR guidance is on the post-v1 backlog (PLAN.md Phase 11).
 
 ## What works today
 
@@ -63,9 +68,28 @@ for the restore runbook.
   shows the resolved plan. For containers without cron/systemd, `pgkeeper daemon` runs the
   schedules in-process with jitter.
 
+- **`pgkeeper web`** — the optional monitoring dashboard:
+  - **Overview**: per-database traffic lights (last run, last verified age, next scheduled
+    run), size-trend sparklines that make a suddenly-smaller dump visible, and a
+    per-destination health grid.
+  - **Runs**: timeline of every recorded run with a detail page per run (duration,
+    per-destination status, stderr on failures).
+  - **Retention**: the policy and exactly what the next prune would delete.
+  - **Backups**: browse artifacts across destinations and download them (allowlisted
+    against the catalog — the endpoint can't be steered at arbitrary paths).
+  - **Actions**: trigger backup / verify / prune / test-notification / doctor from the
+    browser. Every action needs a CSRF token plus an explicit confirmation, and runs
+    through the same lock as cron — never a second concurrent pipeline. Restores are
+    deliberately CLI-only.
+  - **JSON API**: `/api/status` and `/api/runs` for external monitors.
+  - **Security**: auth is mandatory (constant-time token or basic auth), it binds to
+    `127.0.0.1` by default, and it reads the same run-history/manifests the CLI writes —
+    no second data path. Needs the optional `rack` + `puma` gems; see the `web:` block in
+    the example config and [docs/SECURITY.md](docs/SECURITY.md).
+
 Meaningful exit codes throughout: `0` success, `1` partial (some destinations/databases
 failed), `2` total failure. Every run is recorded to a SQLite history store that powers
-`status` (and the forthcoming dashboard).
+`status` and the dashboard.
 
 Storage adapters share one contract (upload / download / list / delete / healthcheck with
 retry + backoff), so local, S3, and the in-memory test backend are provably
@@ -113,6 +137,30 @@ storage:
 
 See [`config/pgkeeper.example.yml`](config/pgkeeper.example.yml) for the full annotated
 schema.
+
+## Docker
+
+The image bundles the CLI, the scheduling daemon, and the dashboard (plus the
+S3 SDK and `postgresql-client`):
+
+```sh
+docker build -t pgkeeper .
+docker run --rm -v ./pgkeeper.yml:/etc/pgkeeper/pgkeeper.yml:ro pgkeeper doctor
+
+# Daemon + dashboard together, wired next to a database:
+cp docker-compose.example.yml docker-compose.yml   # then edit
+export POSTGRES_PASSWORD=... PGKEEPER_APP_PASSWORD=... PGKEEPER_WEB_TOKEN=...
+docker compose up -d
+```
+
+## Documentation
+
+- [docs/RESTORE.md](docs/RESTORE.md) — the 3 a.m. restore runbook.
+- [docs/SECURITY.md](docs/SECURITY.md) — least-privilege backup role, secrets,
+  encryption, dashboard hardening.
+- [docs/PROVIDERS.md](docs/PROVIDERS.md) — storage setup for AWS S3, MinIO,
+  Backblaze B2, Cloudflare R2, Spaces.
+- [CHANGELOG.md](CHANGELOG.md) — release history mapped to plan phases.
 
 ## Development
 

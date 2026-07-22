@@ -62,6 +62,17 @@ module PgKeeper
       assert_equal "a1", by_db["analytics"].run_id
     end
 
+    def test_runs_for_returns_every_database_row_of_one_run
+      record(report(result("app", :success), result("analytics", :failure)), run_id: "multi")
+      record(report(result("app", :success)), run_id: "other", at: Time.utc(2026, 5, 2))
+
+      rows = @history.runs_for("multi")
+
+      assert_equal %w[app analytics], rows.map(&:database)
+      assert_equal %w[success failure], rows.map(&:status)
+      assert_empty @history.runs_for("nope")
+    end
+
     def test_records_error_message_on_failure
       failing = result("app", :failure)
       failing.error = PgKeeper::DumpError.new("boom")
