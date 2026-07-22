@@ -1,0 +1,32 @@
+<h1>Retention</h1>
+<%- if @policy.nil? || @policy.empty? -%>
+<p class="muted">No retention policy configured — backups are kept forever.
+Set <span class="mono">retention:</span> in your config to enable pruning.</p>
+<%- else -%>
+<h2>Policy</h2>
+<table>
+  <tr><%- @policy.each_key do |key| -%><th><%= h(key) %></th><%- end -%></tr>
+  <tr><%- @policy.each_value do |value| -%><td><%= h(value) %></td><%- end -%></tr>
+</table>
+
+<h2>Next prune would delete</h2>
+<%- if @preview.deletions.empty? -%>
+<p class="ok">Nothing — every backup is within the retention policy.</p>
+<%- else -%>
+<table>
+  <tr><th>Destination</th><th>Database</th><th>Backup</th><th>Size</th></tr>
+  <%- @preview.deletions.each do |del| -%>
+  <tr>
+    <td class="mono"><%= h(del.destination) %></td>
+    <td><%= h(del.database) %></td>
+    <td class="mono"><%= h(del.label) %></td>
+    <td><%= h(human_size(del.size_bytes)) %></td>
+  </tr>
+  <%- end -%>
+</table>
+<p class="muted"><%= @preview.count %> backup set(s), <%= h(human_size(@preview.total_bytes)) %> total.
+This is a preview — run the prune from the <a href="/actions">actions</a> page (or
+<span class="mono">pgkeeper prune --apply</span>) to delete. Safety rails always apply:
+the newest backup, the last verified backup, and anything newer than it are never deleted.</p>
+<%- end -%>
+<%- end -%>

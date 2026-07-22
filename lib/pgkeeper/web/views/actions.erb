@@ -1,0 +1,79 @@
+<h1>Actions</h1>
+<%- if @message -%>
+<p class="msg"><%= h(@message) %></p>
+<%- end -%>
+<p class="muted">Every action runs through the same lock as scheduled runs — a click can never
+start a second concurrent pipeline. Long actions run in the background; results appear in the
+job list below. Restores are CLI-only by design.</p>
+
+<form class="action" method="post" action="/actions/backup">
+  <h3>Backup now</h3>
+  <p>Run the full dump → compress → encrypt → fan-out pipeline.</p>
+  <input type="hidden" name="_csrf" value="<%= h(@csrf_token) %>">
+  <p>
+    <label>Database
+      <select name="database">
+        <option value="">(all)</option>
+        <%- @database_names.each do |name| -%>
+        <option value="<%= h(name) %>"><%= h(name) %></option>
+        <%- end -%>
+      </select>
+    </label>
+  </p>
+  <p><label><input type="checkbox" name="confirm"> I want to start a backup run</label></p>
+  <button type="submit">Backup</button>
+</form>
+
+<form class="action" method="post" action="/actions/verify">
+  <h3>Verify latest backups</h3>
+  <p>Tier 1 checksum + Tier 2 structural check; deep restores into a scratch database.</p>
+  <input type="hidden" name="_csrf" value="<%= h(@csrf_token) %>">
+  <p><label><input type="checkbox" name="deep"> Deep (Tier 3 scratch-restore)</label></p>
+  <p><label><input type="checkbox" name="confirm"> I want to verify the latest backups</label></p>
+  <button type="submit">Verify</button>
+</form>
+
+<form class="action" method="post" action="/actions/prune">
+  <h3>Prune</h3>
+  <p>Enforce the retention policy. Dry run unless "apply" is checked.</p>
+  <input type="hidden" name="_csrf" value="<%= h(@csrf_token) %>">
+  <p><label><input type="checkbox" name="apply"> Apply (actually delete)</label></p>
+  <p><label><input type="checkbox" name="confirm"> I understand what prune will delete</label></p>
+  <button type="submit">Prune</button>
+</form>
+
+<form class="action" method="post" action="/actions/test-notification">
+  <h3>Send a test notification</h3>
+  <p>Dispatch a test summary through every configured notifier.</p>
+  <input type="hidden" name="_csrf" value="<%= h(@csrf_token) %>">
+  <p><label><input type="checkbox" name="confirm"> Send it</label></p>
+  <button type="submit">Test notification</button>
+</form>
+
+<form class="action" method="post" action="/actions/doctor">
+  <h3>Run doctor</h3>
+  <p>Re-check tools, config, storage destinations, and database connectivity.</p>
+  <input type="hidden" name="_csrf" value="<%= h(@csrf_token) %>">
+  <p><label><input type="checkbox" name="confirm"> Run the checks</label></p>
+  <button type="submit">Doctor</button>
+</form>
+
+<h2>Jobs</h2>
+<%- if @jobs.empty? -%>
+<p class="muted">No jobs yet.</p>
+<%- else -%>
+<table>
+  <tr><th>#</th><th>Action</th><th>Status</th><th>Started</th><th>Finished</th><th>Detail</th></tr>
+  <%- @jobs.each do |job| -%>
+  <tr>
+    <td><%= job.id %></td>
+    <td class="mono"><%= h(job.action) %></td>
+    <td class="<%= { running: 'warn', done: 'ok', failed: 'bad' }.fetch(job.status, '') %>"><%= h(job.status) %></td>
+    <td><%= h(fmt_time(job.started_at)) %></td>
+    <td><%= job.finished_at ? h(fmt_time(job.finished_at)) : "-" %></td>
+    <td><%= h(job.detail || "") %></td>
+  </tr>
+  <%- end -%>
+</table>
+<p class="muted">Refresh the page to see job progress.</p>
+<%- end -%>

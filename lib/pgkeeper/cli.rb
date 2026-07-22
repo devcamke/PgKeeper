@@ -146,6 +146,18 @@ module PgKeeper
       end
     end
 
+    desc "web", "Serve the monitoring dashboard (auth required; binds to 127.0.0.1 by default)"
+    method_option :bind, type: :string, desc: "Address to bind (default: web.bind or 127.0.0.1)"
+    method_option :port, type: :numeric, desc: "Port to listen on (default: web.port or 8321)"
+    def web
+      config = load_config
+      require "pgkeeper/web"
+      Web.serve(config, logger: logger, bind: options[:bind], port: options[:port])
+    rescue Error, EnvironmentError => e
+      say_error e.message, :red
+      exit(ExitCode::FAILURE)
+    end
+
     desc "daemon", "Run scheduled backups in-process (for containers without cron/systemd)"
     method_option :jitter, type: :numeric, default: 0, desc: "Max seconds of random stagger before each run"
     def daemon

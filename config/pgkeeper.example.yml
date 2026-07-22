@@ -103,3 +103,19 @@ notifications:
   # healthcheck:
   #   url: <%= ENV["PGKEEPER_HEALTHCHECK_URL"] %>
   #   # fail_url: <%= ENV["PGKEEPER_HEALTHCHECK_FAIL_URL"] %>  # also ping on failure
+
+# Optional web dashboard (`pgkeeper web`): backup health, run history,
+# retention preview, and management actions in a browser. Requires the rack
+# and puma gems (`gem install rack puma`; the Docker image includes them).
+# Auth is mandatory — the dashboard refuses to start without it. Browsers log
+# in with basic auth (any username, the token as password); scripts use
+# `Authorization: Bearer <token>`. Binds to loopback by default; put a
+# TLS-terminating reverse proxy in front for remote access.
+# web:
+#   bind: 127.0.0.1
+#   port: 8321
+#   auth:
+#     token: <%= ENV["PGKEEPER_WEB_TOKEN"] %>
+#     # ... or basic-auth credentials instead of a token:
+#     # username: ops
+#     # password: <%= ENV["PGKEEPER_WEB_PASSWORD"] %>

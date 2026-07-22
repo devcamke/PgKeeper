@@ -1,0 +1,66 @@
+<h1>Backup health</h1>
+<table>
+  <tr>
+    <th></th><th>Database</th><th>Last run</th><th>When</th><th>Size</th>
+    <th>Size trend</th><th>Last verified</th><th>Next scheduled run</th>
+  </tr>
+  <%- @databases.each do |row| -%>
+  <tr>
+    <td><%= light_dot(row.light) %></td>
+    <td><strong><%= h(row.name) %></strong></td>
+    <%- if row.last_run -%>
+    <td class="<%= status_class(row.last_run.status) %>">
+      <a href="/runs/<%= h(row.last_run.run_id) %>"><%= h(row.last_run.status) %></a>
+    </td>
+    <td title="<%= h(row.last_run.started_at) %>"><%= h(human_age(row.last_run.started_at)) %></td>
+    <td><%= h(human_size(row.last_run.total_bytes)) %></td>
+    <%- else -%>
+    <td class="muted">never run</td><td class="muted">-</td><td class="muted">-</td>
+    <%- end -%>
+    <td><%= sparkline(row.size_trend) %></td>
+    <%- if row.last_verified_at -%>
+    <td title="<%= h(fmt_time(row.last_verified_at)) %>">
+      <%= h(human_age(row.last_verified_at)) %> <span class="muted">(<%= h(row.verified_tier) %>)</span>
+    </td>
+    <%- else -%>
+    <td class="warn">never</td>
+    <%- end -%>
+    <td><%= row.next_run_at ? h(fmt_time(row.next_run_at)) : '<span class="muted">no schedule</span>' %></td>
+  </tr>
+  <%- end -%>
+</table>
+
+<h2>Destinations</h2>
+<table>
+  <tr><th></th><th>Destination</th><th>Type</th><th>Backup sets</th><th>Total size</th><th>Detail</th></tr>
+  <%- @destinations.each do |dest| -%>
+  <tr>
+    <td><%= light_dot(dest.healthy ? "green" : "red") %></td>
+    <td class="mono"><%= h(dest.name) %></td>
+    <td><%= h(dest.type) %></td>
+    <td><%= dest.set_count %></td>
+    <td><%= h(human_size(dest.total_bytes)) %></td>
+    <td class="<%= dest.healthy ? 'muted' : 'bad' %>"><%= h(dest.error || "healthy") %></td>
+  </tr>
+  <%- end -%>
+</table>
+
+<h2>Recent runs</h2>
+<%- if @recent.empty? -%>
+<p class="muted">No run history yet — trigger a backup from the <a href="/actions">actions</a> page
+or run <span class="mono">pgkeeper backup</span>.</p>
+<%- else -%>
+<table>
+  <tr><th>Run</th><th>Database</th><th>Status</th><th>Started</th><th>Duration</th><th>Size</th></tr>
+  <%- @recent.each do |run| -%>
+  <tr>
+    <td class="mono"><a href="/runs/<%= h(run.run_id) %>"><%= h(run.run_id) %></a></td>
+    <td><%= h(run.database) %></td>
+    <td class="<%= status_class(run.status) %>"><%= h(run.status) %></td>
+    <td><%= h(fmt_time(run.started_at)) %></td>
+    <td><%= h(run.duration_seconds) %>s</td>
+    <td><%= h(human_size(run.total_bytes)) %></td>
+  </tr>
+  <%- end -%>
+</table>
+<%- end -%>

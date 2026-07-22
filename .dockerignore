@@ -1,0 +1,12 @@
+.git
+.github
+tmp
+pkg
+test
+docs
+*.md
+!README.md
+Gemfile.lock
+.rubocop.yml
+.mise.toml
+docker-compose*.yml

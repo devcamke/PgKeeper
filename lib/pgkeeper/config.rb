@@ -29,7 +29,7 @@ module PgKeeper
     DEFAULT_WORKDIR = "/var/backups/pgkeeper"
 
     attr_reader :source, :raw, :databases, :storage, :retention,
-                :compression, :encryption, :notifications, :workdir, :schedule
+                :compression, :encryption, :notifications, :workdir, :schedule, :web
 
     # Load and validate config from a YAML file path.
     def self.load(path, env: ENV)
@@ -93,7 +93,7 @@ module PgKeeper
       end
 
       reject_unknown_keys(@raw, %w[databases defaults compression encryption storage
-                                   retention notifications workdir schedule], "(root)")
+                                   retention notifications workdir schedule web], "(root)")
 
       @workdir = string_or_default(@raw["workdir"], DEFAULT_WORKDIR, "workdir")
       @schedule = validate_schedule(@raw["schedule"], "schedule")
@@ -103,6 +103,7 @@ module PgKeeper
       @storage = build_storage(@raw["storage"])
       @retention = build_retention(@raw["retention"])
       @notifications = build_notifications(@raw["notifications"])
+      @web = build_web(@raw["web"])
     end
 
     def build_databases(list, defaults)
@@ -262,6 +263,37 @@ module PgKeeper
 
       bad = Array(raw).map(&:to_s) - NOTIFY_EVENTS
       problem("notifications.#{name}.on has unknown event(s): #{bad.join(', ')}") unless bad.empty?
+    end
+
+    # Validate the optional `web:` dashboard block. Shape errors fail fast, but
+    # credential *presence* is deliberately not enforced here: an unset env var
+    # renders to nil, and a missing web token must never stop a backup run.
+    # `pgkeeper web` enforces credentials at startup instead.
+    def build_web(hash)
+      return {} if hash.nil?
+
+      unless hash.is_a?(Hash)
+        problem("`web` must be a mapping")
+        return {}
+      end
+
+      reject_unknown_keys(hash, %w[bind port auth], "web")
+      port = hash["port"]
+      unless port.nil? || (port.is_a?(Integer) && port.between?(1, 65_535))
+        problem("web.port must be an integer between 1 and 65535")
+      end
+      validate_web_auth(hash["auth"])
+      hash
+    end
+
+    def validate_web_auth(auth)
+      return if auth.nil?
+      return problem("web.auth must be a mapping") unless auth.is_a?(Hash)
+
+      reject_unknown_keys(auth, %w[token username password], "web.auth")
+      auth.each do |key, value|
+        problem("web.auth.#{key} must be a string") unless value.nil? || value.is_a?(String)
+      end
     end
 
     # -- validation helpers ------------------------------------------------
