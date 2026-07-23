@@ -16,13 +16,15 @@ browser** (`pgkeeper web`), and **deployable with Docker**. See [PLAN.md](PLAN.m
 full multi-phase build plan, [CHANGELOG.md](CHANGELOG.md) for what shipped when, and
 [docs/RESTORE.md](docs/RESTORE.md) for the restore runbook.
 
-> **Recovery-point boundary (by design, documented):** PgKeeper takes logical dumps —
-> there is no WAL archiving / point-in-time recovery, so **your recovery point is your
-> last completed dump**: a restore loses everything written since then. Your RPO is
-> therefore your backup interval — schedule accordingly. If you need minutes-or-seconds
-> RPO, pair PgKeeper with a PITR tool today. See **[docs/RPO-RTO.md](docs/RPO-RTO.md)** for
-> how to set an RPO/RTO SLA you can keep; native WAL archiving / PITR is a planned phase
-> (PLAN.md Phase 12).
+> **Two recovery modes — pick your RPO:** by default PgKeeper takes **logical dumps**, so
+> your recovery point is your last completed dump and your RPO is your backup interval —
+> portable, per-database, cross-version. For a tighter RPO, turn on native **point-in-time
+> recovery (PITR)**: physical base backups plus continuous WAL archiving let you recover a
+> whole cluster to **any instant** in the retained window (RPO in seconds-to-minutes), with
+> WAL-lag monitoring, a dead-man's switch, and chain verification built in. Most deployments
+> run both. See **[docs/RPO-RTO.md](docs/RPO-RTO.md)** to set an SLA you can keep and
+> **[docs/PITR-DESIGN.md](docs/PITR-DESIGN.md)** for the PITR model. *(A PgKeeper-supervised
+> `pg_receivewal` streamer is still on the roadmap; stream WAL yourself and PgKeeper ships it.)*
 
 ## How it works
 
@@ -66,10 +68,14 @@ multi-destination redundancy**. In short:
   delete a backup before it expires, plus a dead-man's switch, notifications, and Prometheus
   metrics.
 
-**Know the boundary:** PgKeeper takes logical dumps, **not** point-in-time recovery — your
-recovery point is your last completed dump, so your RPO is your backup interval. See
-[docs/RPO-RTO.md](docs/RPO-RTO.md) to set a recovery SLA you can keep, and pair with a PITR
-tool if you need minutes-or-seconds RPO.
+- **Low-RPO recovery** — native **point-in-time recovery**: physical base backups plus
+  continuous WAL archiving recover a whole cluster to any instant in the retained window,
+  with coupled base+WAL retention, WAL-lag monitoring, a dead-man's switch, and offline
+  chain verification. Logical dumps stay the portable, per-database line of defense; run both.
+
+**Pick your RPO:** logical dumps put your recovery point at the last dump (RPO = backup
+interval); PITR shrinks it to seconds-to-minutes. See [docs/RPO-RTO.md](docs/RPO-RTO.md) to
+set a recovery SLA you can keep.
 
 ## What works today
 
@@ -120,8 +126,27 @@ tool if you need minutes-or-seconds RPO.
   encryption + compression pipeline, and restores into a target database via
   `pg_restore`/`psql`. Overwriting a non-empty database requires `--force`. See
   [docs/RESTORE.md](docs/RESTORE.md).
+- **Point-in-time recovery (PITR)** — for clusters configured under `clusters:` with
+  `pitr.enabled`, a whole-cluster recovery path parallel to logical dumps:
+  - **`pgkeeper basebackup`** — a physical base backup (`pg_basebackup -Ft`) through the same
+    compress → encrypt → manifest → fan-out pipeline, cataloged as `kind: base`.
+  - **`pgkeeper wal`** — WAL archiving: `archive-file PATH` (the server's `archive_command`
+    bridge, one segment), `archive --spool DIR` (drain a `pg_receivewal` spool, deleting each
+    segment only once it's on every destination), and `fetch NAME DEST` (what a restore's
+    `restore_command` calls — download → decrypt → decompress).
+  - **`pgkeeper restore --to-time/--to-lsn/--to-name/--to latest`** — stage a recovery-ready
+    data directory from the newest base at or before the target plus the recovery config
+    (`restore_command`, `recovery_target_*`, `recovery.signal`); you start Postgres and it
+    replays WAL to the target. **Coupled retention** never prunes a base or the WAL a surviving
+    base needs, held to `pitr.recovery_window`.
+  - **`pgkeeper verify --pitr`** — catalog-only check that the archived WAL is an unbroken
+    chain from the newest base; a gap fails, ahead of restore day.
+  - **Observability** — `pgkeeper status`, the dashboard, and `pgkeeper metrics` surface
+    per-cluster **WAL lag**, the **recovery window**, and a **dead-man's switch**
+    (`pitr.max_lag`). See [docs/RESTORE.md](docs/RESTORE.md#point-in-time-recovery-pitr).
 - **`pgkeeper status`** — reads the SQLite run-history and shows the most recent backup
   per database (status, age, size), or recent runs for one database with `--database`.
+  With PITR clusters configured, also shows per-cluster WAL lag and recovery window.
 - **`pgkeeper metrics`** — prints Prometheus metrics from the run-history for scraping;
   `--output FILE` writes an atomic textfile for the node_exporter textfile collector.
 - **Notifications** (fired automatically after each run, and testable with

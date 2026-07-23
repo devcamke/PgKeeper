@@ -29,11 +29,15 @@ daemon), retention pruning with safety rails, three tiers of verification
 notifications (email / webhook / dead-man's switch), and an optional web
 dashboard.
 
-**The one limitation to plan around:** PgKeeper takes *logical dumps*. A
-restore recovers to the moment of the last backup — not the last second.
-There is no WAL archiving / point-in-time recovery yet — it's a planned phase
-(see PLAN.md Phase 12). Choose a backup frequency that matches how much data
-you can afford to lose.
+**Pick your recovery mode.** By default PgKeeper takes *logical dumps*: a
+restore recovers to the moment of the last backup, so choose a backup frequency
+that matches how much data you can afford to lose. For a tighter recovery point,
+turn on native **point-in-time recovery** (a `clusters:` entry with
+`pitr.enabled`): physical base backups plus continuous WAL archiving recover a
+whole cluster to any instant in the retained window (RPO in seconds-to-minutes).
+See [RPO-RTO.md](RPO-RTO.md) and [PITR-DESIGN.md](PITR-DESIGN.md). *(A
+PgKeeper-supervised `pg_receivewal` streamer is still on the roadmap; for stream
+mode, run `pg_receivewal` yourself and PgKeeper ships the spool.)*
 
 ## 2. Requirements
 
