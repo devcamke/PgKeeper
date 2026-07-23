@@ -5,6 +5,12 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ## Unreleased
 
+### Added
+
+- **`pgkeeper run` alias for `pgkeeper backup`.** `run` now dispatches to the
+  backup command (mirroring the existing `onboard` → `connect` alias), so the
+  most common action has a short, memorable name. `backup` is unchanged.
+
 ### Documentation
 
 - **Guided first-run walkthrough (`docs/WALKTHROUGH.md`).** A single narrative

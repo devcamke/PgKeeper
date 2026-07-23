@@ -39,7 +39,7 @@ module PgKeeper
           "#{config.storage.length} storage target(s))", :green
     end
 
-    desc "backup", "Dump configured databases and fan out to storage destinations"
+    desc "backup", "Dump configured databases and fan out to storage destinations (alias: run)"
     method_option :only, type: :array, desc: "Only back up these database name(s)"
     method_option :destinations, type: :array,
                                  desc: "Only ship to these destination(s), by name or type (default: all)"
@@ -53,6 +53,7 @@ module PgKeeper
       say_error e.message, :red
       exit(ExitCode::FAILURE)
     end
+    map "run" => :backup
 
     desc "destinations", "List configured storage destinations and the tokens that select them"
     def destinations
