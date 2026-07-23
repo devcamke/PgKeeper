@@ -43,8 +43,16 @@ module PgKeeper
 
         Plan.new(
           bases: sorted.select { |base| base.timestamp < anchor.timestamp },
-          wals: wals.select { |wal| wal.segment && wal.segment < anchor.start_segment }
+          wals: prunable_wals(wals, anchor.start_segment)
         )
+      end
+
+      # WAL strictly before the floor. Only plain segments are compared:
+      # timeline-history and backup-history files sort below same-timeline
+      # segments (`.` < `0`), and history files must survive as long as any
+      # WAL references their timeline — they're tiny, so never pruned.
+      def prunable_wals(wals, floor)
+        wals.select { |wal| wal.segment&.match?(WalArchiver::SEGMENT) && wal.segment < floor }
       end
     end
   end

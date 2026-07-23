@@ -5,6 +5,56 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ## Unreleased
 
+### Fixed
+
+Every critical/high finding from the July 2026 engineering review
+([docs/REVIEW-2026-07.md](docs/REVIEW-2026-07.md)):
+
+- **`archive_command` no longer wedges on backup/history files.** Postgres hands
+  `archive_command` `.backup` and `.history` files through the same strictly
+  ordered queue as segments; PgKeeper used to reject them, so the first
+  `pg_basebackup` stalled WAL archiving forever. Both now archive (and fetch
+  back — a restore following a timeline switch asks for `.history` files), and
+  neither retention nor chain verification confuses them with segments.
+- **A run whose every upload fails is now a `failure`, not `partial`** — zero
+  stored copies is not a partial success, and monitoring keyed on failures
+  sees it.
+- **Plain-format restores stop on the first SQL error** (`ON_ERROR_STOP=1`):
+  previously psql exited 0 over a truncated or partially-failing dump and
+  PgKeeper printed "Restore complete".
+- **The destructive-restore guard fails closed**: if the "is the target empty?"
+  probe itself errors, the restore now stops instead of skipping the `--force`
+  check.
+- **The daemon survives the DST fall-back hour** (fugit/et-orbi raise for
+  ambiguous local times; the daemon now steps past the window instead of
+  crashing for the night) **and handles SIGTERM/SIGINT**, exiting cleanly
+  between jobs — `docker stop` no longer ends in SIGKILL mid-backup.
+- **PITR restore bakes an absolute config path into `restore_command`**:
+  Postgres runs it with the data dir as CWD, where a relative path never
+  resolved — with `--to latest` that silently promoted at the end of the base
+  backup, discarding all archived WAL after it.
+- **`verify --pitr` detects a gap at the head of the chain** (WAL missing
+  between the base's start segment and the first archived segment), not just
+  gaps between archived segments.
+- **PITR base selection honors the consistency point.** Base backups now record
+  their end LSN and finish time; a `--to-time`/`--to-lsn` target that falls
+  inside a backup's start–finish window selects the previous base instead of
+  one Postgres would refuse. `restore` also gains `--base LABEL` to pin the
+  base explicitly (needed for `--to-name` points older than the newest base).
+- **Plain `pgkeeper verify` no longer selects PITR cluster artifacts** (it used
+  to `pg_restore --list` a WAL segment and fail every scheduled verify once
+  PITR was enabled), mirroring the pruner's exclusion.
+- **A local `pgkeeper.yml` can no longer be baked into the Docker image**,
+  where it silently shadowed the mounted `/etc/pgkeeper/pgkeeper.yml`
+  (`.dockerignore` now excludes it).
+- **`daemon-with-web` forwards signals to both children and takes the
+  container down when either dies** — a dead dashboard no longer lingers
+  silently, and `docker stop` shuts both down gracefully.
+- **`pitr.base_backup.schedule` actually schedules base backups** — one entry
+  per cluster in the daemon, crontab (`pgkeeper basebackup --cluster N` under
+  its own flock), and systemd units. Previously it validated and then
+  silently never ran.
+
 ### Added
 
 - **PITR Stage 7: point-in-time recovery runbook and RPO/RTO docs.** The final

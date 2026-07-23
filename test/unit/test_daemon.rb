@@ -103,11 +103,68 @@ module PgKeeper
       assert_includes fired, [:prune, ["--apply"]]
     end
 
+    # Wraps a real schedule but raises on the first +failures+ next_time calls —
+    # the shape of et-orbi's ArgumentError inside the DST fall-back hour.
+    class FlakySchedule
+      def initialize(real, failures:)
+        @real = real
+        @failures = failures
+        @calls = 0
+      end
+
+      attr_reader :calls
+
+      def next_time(from:)
+        @calls += 1
+        raise ArgumentError, 'Cannot determine timezone from "EDT"' if @calls <= @failures
+
+        @real.next_time(from: from)
+      end
+    end
+
+    def test_an_ambiguous_clock_does_not_kill_the_daemon
+      clock = FakeClock.new(Time.utc(2026, 5, 1, 0, 30, 0))
+      fired = []
+      daemon = build_daemon(config("schedule" => "hourly", "databases" => [{ "name" => "app" }]),
+                            clock, runner: ->(e) { fired << e.label })
+      entry = daemon.entries.first
+      entry.schedule = FlakySchedule.new(entry.schedule, failures: 2)
+
+      count = daemon.run(max_ticks: 3)
+
+      assert_equal 3, count, "the loop survives next_time raising and keeps firing"
+    end
+
+    def test_sigterm_stops_the_loop_between_jobs
+      clock = FakeClock.new(Time.utc(2026, 5, 1, 0, 30, 0))
+      sleeps = 0
+      daemon = Daemon.new(config("schedule" => "hourly", "databases" => [{ "name" => "app" }]),
+                          logger: null_logger, clock: -> { clock.now },
+                          sleeper: lambda { |s|
+                            sleeps += 1
+                            Process.kill("TERM", Process.pid)
+                            sleep 0.05 # let the trap handler run
+                            clock.advance(s)
+                          },
+                          runner: ->(_e) {})
+
+      count = daemon.run(max_ticks: 5, handle_signals: true)
+
+      assert_equal 0, count, "the loop exits before firing once stop is requested"
+      assert_equal 1, sleeps, "the loop exits right after the interrupted sleep"
+    ensure
+      Signal.trap("TERM", "DEFAULT")
+      Signal.trap("INT", "DEFAULT")
+    end
+
     def test_default_runner_dispatches_on_action
       cfg = config(
         "databases" => [{ "name" => "app" }],
         "maintenance" => { "verify" => { "schedule" => "daily at 04:00" },
-                           "prune" => { "schedule" => "daily at 05:00" } }
+                           "prune" => { "schedule" => "daily at 05:00" } },
+        "clusters" => [{ "name" => "c1", "host" => "h",
+                         "pitr" => { "enabled" => true,
+                                     "base_backup" => { "schedule" => "daily at 02:00" } } }]
       )
       daemon = Daemon.new(cfg, logger: null_logger)
       seen = []
@@ -115,10 +172,11 @@ module PgKeeper
       daemon.define_singleton_method(:run_backup) { |e| seen << [:backup, e.action] }
       daemon.define_singleton_method(:run_verify) { |e| seen << [:verify, e.action] }
       daemon.define_singleton_method(:run_prune) { |e| seen << [:prune, e.action] }
+      daemon.define_singleton_method(:run_basebackup) { |e| seen << [:basebackup, e.action] }
 
       Scheduler.entries(cfg).each { |e| daemon.send(:run_action, e) }
 
-      assert_equal [%i[verify verify], %i[prune prune]], seen
+      assert_equal [%i[basebackup basebackup], %i[verify verify], %i[prune prune]], seen
     end
   end
 end

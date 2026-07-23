@@ -42,9 +42,16 @@ module PgKeeper
         @adapters = Storage.build_all(@config.storage, logger: @logger)
       end
 
-      def run(target:, data_dir:, force: false, action: "promote", bin: "pgkeeper")
-        adapter, base = select_base(target)
-        raise Error, "no base backup precedes #{target.describe} for cluster #{@cluster.name}" if base.nil?
+      # +base:+ pins the base backup by label (or label prefix) instead of
+      # automatic selection — needed for a named restore point older than the
+      # newest base, which no picker can locate without replaying WAL.
+      def run(target:, data_dir:, force: false, action: "promote", bin: "pgkeeper", base: nil)
+        adapter, chosen = base ? find_base(base) : select_base(target)
+        if chosen.nil?
+          missing = base ? "labelled #{base.inspect}" : "preceding #{target.describe}"
+          raise Error, "no base backup #{missing} for cluster #{@cluster.name}"
+        end
+        base = chosen
 
         guard!(data_dir, force)
         FileUtils.mkdir_p(data_dir)
@@ -55,13 +62,21 @@ module PgKeeper
         Result.new(cluster: @cluster.name, base_label: base_label(base), data_dir: data_dir, target: target)
       end
 
-      # Choose the newest base at or before the target, from [adapter, base]
-      # candidate pairs. Pure — the adapter rides along so {#run} can fetch it.
+      # Choose the newest base whose *consistency point* is at or before the
+      # target, from [adapter, base] candidate pairs. Recovery can only stop at
+      # points after the backup finished (its end LSN / finish time), so a base
+      # merely *started* before the target may still overshoot it — Postgres
+      # would refuse with "recovery stop point is before consistent recovery
+      # point". Pure — the adapter rides along so {#run} can fetch it.
+      #
+      # :name targets fall back to the newest base: a restore point's position
+      # is unknowable from the catalog. When the point predates the newest
+      # base, pass an explicit base label ({#run}'s +base:+ / `--base`).
       def self.pick(candidates, target)
         sorted = candidates.sort_by { |(_adapter, base)| base.timestamp }
         case target.type
         when :time
-          sorted.select { |(_adapter, base)| base.timestamp && base.timestamp <= target.value }.last
+          sorted.select { |(_adapter, base)| consistent_at(base) && consistent_at(base) <= target.value }.last
         when :lsn
           limit = Wal.lsn_to_int(target.value)
           sorted.select { |(_adapter, base)| base_lsn(base) && limit && base_lsn(base) <= limit }.last
@@ -70,10 +85,25 @@ module PgKeeper
         end
       end
 
-      def self.base_lsn(base) = Wal.lsn_to_int(base.start_lsn)
+      # The backup's finish time when the manifest records it; its start time
+      # for manifests written before finished_at was carried on the catalog —
+      # the historical (optimistic) behavior, kept so old bases stay selectable.
+      def self.consistent_at(base)
+        base.finished_at || base.timestamp
+      end
+
+      # Likewise: the end LSN when recorded, else the (pre-consistency) start.
+      def self.base_lsn(base)
+        Wal.lsn_to_int(base.end_lsn || base.start_lsn)
+      end
 
       def select_base(target)
         self.class.pick(discover_bases, target) || [nil, nil]
+      end
+
+      # The base whose label (e.g. 2026-07-21T031500Z) starts with +label+.
+      def find_base(label)
+        discover_bases.find { |(_adapter, base)| base_label(base).start_with?(label) } || [nil, nil]
       end
 
       private
@@ -139,9 +169,14 @@ module PgKeeper
 
       # Append the recovery settings and drop recovery.signal, so a plain
       # `pg_ctl start` on the directory enters archive recovery to the target.
+      # The config path is expanded: Postgres runs restore_command with the data
+      # directory as its CWD, where a relative path (e.g. the discovered
+      # ./pgkeeper.yml) would never resolve — every fetch would exit 1, which
+      # recovery reads as end-of-WAL and silently promotes at the base backup.
       def write_recovery(data_dir, target, action, bin)
+        config_path = File.expand_path(@config.source)
         conf = ["# added by pgkeeper restore",
-                %(restore_command = '#{bin} wal fetch --cluster #{@cluster.name} --config #{@config.source} "%f" "%p"'),
+                %(restore_command = '#{bin} wal fetch --cluster #{@cluster.name} --config #{config_path} "%f" "%p"'),
                 recovery_target_line(target),
                 %(recovery_target_action = '#{action}')].compact.join("\n")
         File.open(File.join(data_dir, "postgresql.auto.conf"), "a") { |f| f.puts("\n#{conf}") }

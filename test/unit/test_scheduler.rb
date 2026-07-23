@@ -119,6 +119,44 @@ module PgKeeper
                       "ExecStart=pgkeeper verify --config /etc/pgkeeper.yml --deep"
     end
 
+    # --- base-backup entries (PITR) ----------------------------------------
+
+    def pitr_config
+      config(
+        "databases" => [{ "name" => "app" }],
+        "clusters" => [
+          { "name" => "c1", "host" => "h",
+            "pitr" => { "enabled" => true, "base_backup" => { "schedule" => "daily at 02:00" } } },
+          { "name" => "c2", "host" => "h", "pitr" => { "enabled" => true } }
+        ]
+      )
+    end
+
+    def test_base_backup_schedule_creates_an_entry_per_cluster
+      entries = Scheduler.entries(pitr_config).select { |e| e.action == :basebackup }
+
+      assert_equal ["c1"], entries.map(&:label), "only clusters with a base_backup schedule get an entry"
+      assert_equal "0 2 * * *", entries.first.schedule.to_cron
+      assert_equal ["c1"], entries.first.only
+    end
+
+    def test_base_backup_cron_line_uses_cluster_scope
+      lines = Scheduler::Cron.new(Scheduler.entries(pitr_config), config_path: "/etc/pgkeeper.yml",
+                                                                  workdir: "/var/pgk").lines
+      line = lines.grep(/ basebackup /).first
+
+      assert_includes line, "pgkeeper basebackup --config /etc/pgkeeper.yml --cluster c1"
+      assert_includes line, "/var/pgk/.cron-basebackup-c1.lock"
+    end
+
+    def test_base_backup_systemd_unit_uses_cluster_scope
+      units = Scheduler::Systemd.new(Scheduler.entries(pitr_config), config_path: "/etc/pgkeeper.yml").units
+
+      assert_includes units.keys, "pgkeeper-basebackup-c1.service"
+      assert_includes units["pgkeeper-basebackup-c1.service"],
+                      "ExecStart=pgkeeper basebackup --config /etc/pgkeeper.yml --cluster c1"
+    end
+
     # --- cron generation (golden) -----------------------------------------
 
     def test_cron_line_has_flock_guard_and_scope

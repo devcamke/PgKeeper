@@ -108,5 +108,28 @@ module PgKeeper
         refute_includes File.binread(result), "plaintext contents"
       end
     end
+
+    # Status classification: a run that stored nothing anywhere is a failure —
+    # the staging copy is deleted on the way out, so "partial" would report a
+    # backup that does not exist.
+    def ok_dest = Orchestrator::Destination.new(name: "a", status: :ok)
+    def failed_dest = Orchestrator::Destination.new(name: "b", status: :failed, error: "boom")
+    def status_of(destinations) = orchestrator.send(:derive_status, [{ destinations: destinations }])
+
+    def test_all_destinations_ok_is_success
+      assert_equal :success, status_of([ok_dest, ok_dest])
+    end
+
+    def test_some_destinations_failed_is_partial
+      assert_equal :partial, status_of([ok_dest, failed_dest])
+    end
+
+    def test_every_destination_failed_is_failure
+      assert_equal :failure, status_of([failed_dest, failed_dest])
+    end
+
+    def test_a_single_failed_destination_is_failure
+      assert_equal :failure, status_of([failed_dest])
+    end
   end
 end

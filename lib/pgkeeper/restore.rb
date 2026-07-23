@@ -84,17 +84,24 @@ module PgKeeper
       end
     end
 
-    # Refuse to clobber a non-empty database unless the caller forces it.
+    # Refuse to clobber a non-empty database unless the caller forces it. The
+    # guard fails closed: if the probe itself errors we cannot know the target
+    # is empty, so the restore stops rather than proceeding unchecked.
     def guard_target!(connection, target_db, force)
+      return if force
+
       env = connection.libpq_env.merge("PGDATABASE" => target_db)
-      out, _err, status = Subprocess.capture3(env, "psql", "-XtAc", <<~SQL, timeout: query_timeout)
+      out, err, status = Subprocess.capture3(env, "psql", "-XtAc", <<~SQL, timeout: query_timeout)
         SELECT count(*) FROM information_schema.tables
         WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
       SQL
-      return unless status.success?
+      unless status.success?
+        raise Error, "could not check whether #{target_db.inspect} is empty (#{err.strip.lines.last&.strip}); " \
+                     "refusing to restore — pass --force to skip the check"
+      end
 
       table_count = out.strip.to_i
-      return if table_count.zero? || force
+      return if table_count.zero?
 
       raise Error, "target database #{target_db.inspect} already has #{table_count} table(s); " \
                    "pass --force to overwrite it"
@@ -104,7 +111,10 @@ module PgKeeper
       env = connection.libpq_env.merge("PGDATABASE" => target_db)
       case materialized[:format]
       when "plain"
-        run!(env, "psql", "--no-password", "-v", "ON_ERROR_STOP=0", "-f", materialized[:path])
+        # ON_ERROR_STOP=1: without it psql exits 0 over failed statements, so a
+        # truncated or mid-file-failing dump would "restore" silently partially
+        # (the deep verifier stops on error for the same reason).
+        run!(env, "psql", "--no-password", "-v", "ON_ERROR_STOP=1", "-f", materialized[:path])
       else # custom or directory
         args = ["--no-password", "--dbname=#{target_db}"]
         # --clean --if-exists drops existing objects first, so a forced restore

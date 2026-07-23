@@ -81,6 +81,37 @@ module PgKeeper
       end
     end
 
+    def test_a_gap_at_the_head_of_the_chain_fails
+      in_tmpdir do |dir|
+        root = File.join(dir, "store")
+        seed_base(root, start_segment: "000000010000000000000005")
+        # 05 and 06 were never archived; the chain is internally contiguous but
+        # starts after the base's start segment — unreachable by replay.
+        %w[000000010000000000000007 000000010000000000000008].each { |s| seed_wal(root, s) }
+
+        result = verify(dir)
+
+        refute_predicate result, :ok?
+        assert_includes result.detail, "does not start at the base's start segment"
+        assert_equal "000000010000000000000005", result.gap.missing
+      end
+    end
+
+    def test_archived_history_files_do_not_disturb_the_chain
+      in_tmpdir do |dir|
+        root = File.join(dir, "store")
+        seed_base(root)
+        %w[000000010000000000000005 000000010000000000000006].each { |s| seed_wal(root, s) }
+        seed_wal(root, "00000002.history")
+        seed_wal(root, "000000010000000000000005.00000028.backup")
+
+        result = verify(dir)
+
+        assert_predicate result, :ok?
+        assert_equal 2, result.segment_count
+      end
+    end
+
     def test_no_wal_at_or_after_the_base_fails
       in_tmpdir do |dir|
         root = File.join(dir, "store")

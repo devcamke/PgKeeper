@@ -35,6 +35,14 @@ module PgKeeper
         chain = archived_segments.select { |seg| seg >= base.start_segment }
         return result(false, "no archived WAL at or after the base start #{base.start_segment}", base) if chain.empty?
 
+        # A gap at the head is a gap like any other: recovery replays from the
+        # base's start segment, so a chain that begins later can't be reached.
+        unless chain.first == base.start_segment
+          gap = Gap.new(after: base.start_segment, missing: base.start_segment)
+          return result(false, "WAL chain does not start at the base's start segment " \
+                               "#{base.start_segment} (first archived: #{chain.first})", base, chain, gap)
+        end
+
         assess(base, chain)
       end
 
@@ -66,8 +74,10 @@ module PgKeeper
         Inventory.bases(discover).max_by(&:timestamp)
       end
 
+      # Plain segments only: archived timeline-history / backup-history files
+      # ride the same WAL conveyor but are not links in the replay chain.
       def archived_segments
-        Inventory.wal(discover).filter_map(&:segment).uniq.sort
+        Inventory.wal(discover).filter_map(&:segment).grep(WalArchiver::SEGMENT).uniq.sort
       end
 
       # Cataloged artifacts for this cluster across destinations, deduped by path.

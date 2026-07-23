@@ -159,6 +159,9 @@ module PgKeeper
     method_option :to_lsn, type: :string, desc: "PITR target: recover to this LSN"
     method_option :to_name, type: :string, desc: "PITR target: recover to this named restore point"
     method_option :to, type: :string, desc: "PITR target: `latest` (replay all archived WAL)"
+    method_option :base, type: :string,
+                         desc: "PITR: base backup label (or prefix) to restore from, instead of automatic " \
+                               "selection — needed with --to-name when the point predates the newest base"
     method_option :action, type: :string, default: "promote", desc: "PITR: recovery_target_action (promote|pause)"
     method_option :restore_bin, type: :string, default: "pgkeeper",
                                 desc: "PITR: pgkeeper path baked into the recovery restore_command"
@@ -259,7 +262,7 @@ module PgKeeper
     method_option :jitter, type: :numeric, default: 0, desc: "Max seconds of random stagger before each run"
     def daemon
       config = load_config
-      Daemon.new(config, logger: logger, jitter: options[:jitter]).run
+      Daemon.new(config, logger: logger, jitter: options[:jitter]).run(handle_signals: true)
     rescue Error => e
       say_error e.message, :red
       exit(ExitCode::FAILURE)
@@ -420,7 +423,8 @@ module PgKeeper
 
         result = PITR::Restore.new(config, cluster, logger: logger)
                               .run(target: pitr_target(options), data_dir: options[:data_dir],
-                                   force: options[:force], action: options[:action], bin: options[:restore_bin])
+                                   force: options[:force], action: options[:action], bin: options[:restore_bin],
+                                   base: options[:base])
         print_pitr_restore(result)
       end
 

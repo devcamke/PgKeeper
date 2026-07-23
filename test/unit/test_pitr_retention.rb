@@ -50,6 +50,20 @@ module PgKeeper
       assert_equal %w[000000010000000000000004], result.wals.map(&:segment)
     end
 
+    def test_history_and_backup_label_files_are_never_pruned
+      # "00000001.history" sorts below any timeline-1 segment ("." < "0"), so a
+      # naive floor comparison would prune it — but a restore following timeline
+      # switches needs history files regardless of their sort position.
+      anchor = base(10, "000000010000000000000010")
+      wals = [seg("00000001.history"),
+              seg("000000010000000000000005.00000028.backup"),
+              seg("000000010000000000000004")]
+
+      result = plan(bases: [anchor, base(20, "000000010000000000000005")], wals: wals)
+
+      assert_equal %w[000000010000000000000004], result.wals.map(&:segment)
+    end
+
     def test_a_single_base_is_never_pruned
       result = plan(bases: [base(30, "000000010000000000000002")],
                     wals: [seg("000000010000000000000001")])

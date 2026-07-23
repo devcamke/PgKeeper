@@ -28,8 +28,13 @@ module PgKeeper
       def flags = self[:flags] || []
 
       # Databases this entry targets: a specific list, or nil for "all".
+      # `pgkeeper basebackup` scopes by cluster, not database, and takes
+      # --cluster (each basebackup entry targets exactly one cluster).
       def scope_args
-        only ? ["--only", *only] : []
+        return [] unless only
+        return ["--cluster", *only] if action == :basebackup
+
+        ["--only", *only]
       end
 
       # Everything after the subcommand: action flags then database scope.
@@ -44,7 +49,21 @@ module PgKeeper
     module_function
 
     def entries(config)
-      backup_entries(config) + maintenance_entries(config)
+      backup_entries(config) + basebackup_entries(config) + maintenance_entries(config)
+    end
+
+    # One entry per PITR cluster with a configured base-backup cadence
+    # (pitr.base_backup.schedule). Without these, the setting would validate
+    # and then silently never run — the only base drifting stale while status
+    # stays green.
+    def basebackup_entries(config)
+      config.pitr_clusters.filter_map do |cluster|
+        expr = cluster.pitr.base_backup_schedule
+        next nil unless expr
+
+        Entry.new(label: cluster.name, schedule: Schedule.parse(expr),
+                  only: [cluster.name], action: :basebackup)
+      end
     end
 
     def backup_entries(config)

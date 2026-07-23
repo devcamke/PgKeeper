@@ -54,6 +54,11 @@ module PgKeeper
 
     def select_sets(catalog, selector, only)
       databases = only && !only.empty? ? Array(only) : catalog.databases
+      # PITR base/WAL artifacts carry the cluster name as their "database" but
+      # are not logical dumps — verifying them here would pg_restore a WAL
+      # segment and fail every scheduled verify. They have their own check
+      # (`verify --pitr`), and the Pruner excludes them the same way.
+      databases -= @config.pitr_clusters.map(&:name)
       databases.flat_map do |database|
         sets = catalog.backup_sets(database: database)
         case selector.to_s

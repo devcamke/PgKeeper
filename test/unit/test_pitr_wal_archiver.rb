@@ -96,6 +96,40 @@ module PgKeeper
       in_tmpdir { |dir| assert_raises(Error) { archiver(config(dir)).archive_file("/tmp/x", "not-a-segment") } }
     end
 
+    # Postgres's archive_command also hands over timeline-history and
+    # backup-history files; refusing them wedges archiving forever (the queue is
+    # strictly ordered), so both must archive — and fetch back, since a restore
+    # with recovery_target_timeline=latest asks for .history files.
+    def test_archives_and_fetches_history_and_backup_label_files
+      in_tmpdir do |dir|
+        arch = archiver(config(dir))
+        spool = Dir.mktmpdir
+        %w[00000002.history 000000010000000000000005.00000028.backup].each do |name|
+          path, bytes = write_segment(spool, name: name)
+
+          assert arch.archive_file(path), "#{name} must be archivable"
+          assert_path_exists stored(dir, name)
+
+          out = File.join(dir, "fetched-#{name}")
+          arch.fetch(name, out)
+
+          assert_equal bytes, File.binread(out)
+        end
+      end
+    end
+
+    def test_archive_spool_drains_history_files_too
+      in_tmpdir do |dir|
+        arch = archiver(config(dir))
+        spool = Dir.mktmpdir
+        write_segment(spool, name: SEG)
+        write_segment(spool, name: "00000002.history")
+
+        assert_equal 2, arch.archive_spool(spool)
+        refute_path_exists File.join(spool, "00000002.history")
+      end
+    end
+
     def test_fetching_a_missing_segment_raises
       in_tmpdir do |dir|
         error = assert_raises(Error) { archiver(config(dir)).fetch(SEG, File.join(dir, "out")) }
