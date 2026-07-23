@@ -137,6 +137,31 @@ Storage adapters share one contract (upload / download / list / delete / healthc
 retry + backoff), so local, S3, and the in-memory test backend are provably
 interchangeable. Cloud SDKs are optional dependencies, lazy-loaded only when used.
 
+## Onboarding
+
+`pgkeeper connect` is the guided way in: it collects a database's connection details,
+**live-tests them against the server**, takes a validated backup schedule (with a preview
+of the next few runs), and writes `pgkeeper.yml` — a fresh commented config on a new host,
+or an appended entry on an existing one (comments and `<%= ENV[...] %>` interpolations
+preserved). Passwords are stored as an env-var reference, never inlined.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/wizard-connect-dark.png">
+    <img alt="pgkeeper connect — the onboarding wizard: connection details, a live connection test, a validated schedule with a preview of the next runs, a config review, and next-step guidance" src="docs/images/wizard-connect-light.png" width="82%">
+  </picture>
+</p>
+
+The credential test is a real `psql` round-trip (the same check `pgkeeper doctor` runs), so
+a typo or an unreachable server is caught up front — retry, save anyway, or abort:
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/wizard-connect-retry-dark.png">
+    <img alt="pgkeeper connect catching a refused connection and recovering after the server comes up on retry" src="docs/images/wizard-connect-retry-light.png" width="82%">
+  </picture>
+</p>
+
 ## The dashboard
 
 `pgkeeper web` serves a read-mostly monitoring UI over the **same** run-history and
