@@ -11,6 +11,13 @@ All notable changes to PgKeeper. Versions map to the milestones in
   backup command (mirroring the existing `onboard` → `connect` alias), so the
   most common action has a short, memorable name. `backup` is unchanged.
 
+### Changed
+
+- **`rake install` / `build` / `release` now work.** The Rakefile loads
+  `bundler/gem_tasks`, so the standard gem-packaging tasks are available —
+  `rake install` builds the current checkout and puts `pgkeeper` on your PATH
+  (guarded so a Bundler-less environment still runs test/lint).
+
 ### Documentation
 
 - **Guided first-run walkthrough (`docs/WALKTHROUGH.md`).** A single narrative
