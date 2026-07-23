@@ -57,6 +57,41 @@ module PgKeeper
       end
     end
 
+    def test_object_lock_sets_worm_retention_on_upload
+      captured = {}
+      client = Aws::S3::Client.new(stub_responses: true, region: "us-east-1")
+      client.stub_responses(:put_object, lambda { |ctx|
+        captured.replace(ctx.params)
+        {}
+      })
+      client.stub_responses(:head_object, { content_length: 4 })
+      adapter = Storage::S3.with_client(client, bucket: "backups", prefix: "pgk", logger: null_logger,
+                                                object_lock: { "mode" => "COMPLIANCE", "retain_days" => 30 })
+
+      with_local_file("data") { |src, _dir| adapter.upload(src, "db/app.dump") }
+
+      assert_equal "COMPLIANCE", captured[:object_lock_mode]
+      assert_kind_of Time, captured[:object_lock_retain_until_date]
+      # ~30 days out (allow slack), and in UTC.
+      assert_operator captured[:object_lock_retain_until_date], :>, Time.now + (29 * 86_400)
+      assert_operator captured[:object_lock_retain_until_date], :<, Time.now + (31 * 86_400)
+    end
+
+    def test_uploads_carry_no_object_lock_by_default
+      captured = {}
+      client = stubbed_client({})
+      client.stub_responses(:put_object, lambda { |ctx|
+        captured.replace(ctx.params)
+        {}
+      })
+      adapter = Storage::S3.with_client(client, bucket: "backups", prefix: "pgk", logger: null_logger)
+
+      with_local_file("data") { |src, _dir| adapter.upload(src, "db/app.dump") }
+
+      refute captured.key?(:object_lock_mode), "no Object Lock unless configured"
+      refute captured.key?(:object_lock_retain_until_date)
+    end
+
     private
 
     def stubbed_client(store)

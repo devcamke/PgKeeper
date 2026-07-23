@@ -89,6 +89,7 @@ module PgKeeper
         access_key_id: target["access_key_id"],
         secret_access_key: target["secret_access_key"],
         force_path_style: !!target["force_path_style"],
+        object_lock: target["object_lock"],
         logger: logger
       )
     end

@@ -35,10 +35,16 @@ module PgKeeper
       CHUNK = 1 << 20 # 1 MiB
       CIPHER = "aes-256-gcm"
 
-      # +key+ is the descriptor produced by {Crypto::KeyMaterial}: either a raw
-      # 32-byte key or a passphrase to stretch with PBKDF2.
-      def initialize(key:)
-        @key_material = key
+      # Key material is the descriptor produced by {Crypto::KeyMaterial}: either a
+      # raw 32-byte key or a passphrase to stretch with PBKDF2.
+      #
+      # A single +key:+ is the common case. +keys:+ takes a list (primary first)
+      # to support graceful key rotation: encryption always uses the primary key,
+      # while decryption tries every key in turn, so backups written under a
+      # since-retired passphrase stay restorable and verifiable.
+      def initialize(key: nil, keys: nil)
+        @keys = (keys || [key]).compact
+        raise ConfigError, "AES encryption requires at least one key" if @keys.empty?
       end
 
       def name = "aes256gcm"
@@ -46,7 +52,7 @@ module PgKeeper
 
       def encrypt(source, dest)
         salt = OpenSSL::Random.random_bytes(SALT_LEN)
-        kdf, key = derive_key(salt)
+        kdf, key = derive_key(@keys.first, salt)
 
         cipher = OpenSSL::Cipher.new(CIPHER)
         cipher.encrypt
@@ -67,10 +73,29 @@ module PgKeeper
         dest
       end
 
+      # Try each configured key in turn (there is more than one only mid-rotation)
+      # until one authenticates. Structural problems — bad magic, truncation —
+      # are raised immediately since no key can fix them; only a GCM auth failure
+      # (wrong key) falls through to the next candidate.
       def decrypt(source, dest)
+        last_error = nil
+        @keys.each do |material|
+          return decrypt_with(source, dest, material)
+        rescue OpenSSL::Cipher::CipherError => e
+          last_error = e
+        end
+
+        FileUtils.rm_f(dest)
+        raise Error, "decryption failed for #{source}: wrong key or corrupted/tampered file " \
+                     "(tried #{@keys.length} key(s))#{" — #{last_error.message}" if last_error}"
+      end
+
+      private
+
+      def decrypt_with(source, dest, material)
         File.open(source, "rb") do |input|
           salt, iv = read_header(input, source)
-          _kdf, key = derive_key(salt) # kdf flag informs nothing we don't already know from config
+          _kdf, key = derive_key(material, salt) # kdf flag informs nothing we don't already know from config
 
           cipher = OpenSSL::Cipher.new(CIPHER)
           cipher.decrypt
@@ -82,8 +107,6 @@ module PgKeeper
         end
         dest
       end
-
-      private
 
       def read_header(input, source)
         header = input.read(HEADER_LEN).to_s
@@ -123,17 +146,19 @@ module PgKeeper
           out.write(cipher.final)
         end
       rescue OpenSSL::Cipher::CipherError
+        # A wrong key or a tampered/corrupt file. Clean up the partial output and
+        # let {#decrypt} decide whether another key might work or it's terminal.
         FileUtils.rm_f(dest)
-        raise Error, "decryption failed for #{source}: wrong key or corrupted/tampered file"
+        raise
       end
 
-      def derive_key(salt)
-        case @key_material[:kind]
+      def derive_key(material, salt)
+        case material[:kind]
         when :raw
-          [KDF_RAW, @key_material[:key]]
+          [KDF_RAW, material[:key]]
         when :passphrase
           key = OpenSSL::PKCS5.pbkdf2_hmac(
-            @key_material[:passphrase], salt,
+            material[:passphrase], salt,
             Crypto::KeyMaterial::PBKDF2_ITERATIONS, 32, OpenSSL::Digest.new("SHA256")
           )
           [KDF_PBKDF2, key]

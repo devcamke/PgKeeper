@@ -320,6 +320,152 @@ module PgKeeper
       assert(err.problems.any? { |p| p.include?("schedule") })
     end
 
+    # --- maintenance block ------------------------------------------------
+
+    def test_maintenance_block_parses_verify_and_prune
+      config = Config.parse(<<~YAML)
+        databases:
+          - name: app
+        maintenance:
+          verify:
+            schedule: weekly on sunday at 04:00
+            deep: true
+          prune:
+            schedule: daily at 05:00
+            apply: true
+            only: app
+      YAML
+
+      assert_equal "weekly on sunday at 04:00", config.maintenance["verify"]["schedule"]
+      assert config.maintenance["verify"]["deep"]
+      assert_equal ["app"], config.maintenance["prune"]["only"]
+      assert config.maintenance["prune"]["apply"]
+    end
+
+    def test_maintenance_task_requires_a_schedule
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          databases:
+            - name: app
+          maintenance:
+            verify:
+              deep: true
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("maintenance.verify requires a `schedule`") })
+    end
+
+    def test_maintenance_bad_schedule_rejected
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          databases:
+            - name: app
+          maintenance:
+            prune:
+              schedule: whenever
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("maintenance.prune.schedule") })
+    end
+
+    def test_maintenance_unknown_key_rejected
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          databases:
+            - name: app
+          maintenance:
+            reindex:
+              schedule: daily
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("maintenance has unknown key") })
+    end
+
+    # --- S3 Object Lock (immutable backups) -------------------------------
+
+    def test_s3_object_lock_accepted
+      config = Config.parse(<<~YAML)
+        databases:
+          - name: app
+        storage:
+          - type: s3
+            bucket: backups
+            object_lock:
+              mode: COMPLIANCE
+              retain_days: 30
+      YAML
+
+      lock = config.storage.first["object_lock"]
+
+      assert_equal "COMPLIANCE", lock["mode"]
+      assert_equal 30, lock["retain_days"]
+    end
+
+    def test_s3_object_lock_bad_mode_rejected
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          databases:
+            - name: app
+          storage:
+            - type: s3
+              bucket: backups
+              object_lock:
+                mode: FOREVER
+                retain_days: 30
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("object_lock.mode") })
+    end
+
+    def test_s3_object_lock_requires_positive_retain_days
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          databases:
+            - name: app
+          storage:
+            - type: s3
+              bucket: backups
+              object_lock:
+                mode: GOVERNANCE
+                retain_days: 0
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("object_lock.retain_days") })
+    end
+
+    # --- encryption key rotation ------------------------------------------
+
+    def test_encryption_previous_keys_accepted
+      config = Config.parse(<<~YAML)
+        databases:
+          - name: app
+        encryption:
+          enabled: true
+          passphrase_env: PGKEEPER_PASS
+          previous_passphrase_envs:
+            - PGKEEPER_PASS_OLD
+          previous_keyfiles:
+            - /etc/pgkeeper/old.key
+      YAML
+
+      assert_equal ["PGKEEPER_PASS_OLD"], config.encryption["previous_passphrase_envs"]
+      assert_equal ["/etc/pgkeeper/old.key"], config.encryption["previous_keyfiles"]
+    end
+
+    def test_encryption_previous_passphrase_envs_must_be_a_list
+      err = assert_raises(ConfigError) do
+        Config.parse(<<~YAML)
+          databases:
+            - name: app
+          encryption:
+            enabled: true
+            passphrase_env: PGKEEPER_PASS
+            previous_passphrase_envs: PGKEEPER_PASS_OLD
+        YAML
+      end
+      assert(err.problems.any? { |p| p.include?("previous_passphrase_envs must be a list") })
+    end
+
     def test_slug_is_filesystem_safe
       config = Config.parse(<<~YAML)
         databases:

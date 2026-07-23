@@ -65,6 +65,55 @@ encryption:
   (a password manager, a KMS) — an encrypted backup whose key lived only on
   the dead server is not a backup.
 
+### Rotating the encryption key
+
+Changing `passphrase_env`/`keyfile` alone would strand every backup written
+under the old key — nothing could decrypt them. Rotate through a keyring
+instead: set the new key as the primary and keep the retired one(s) listed so
+old backups stay restorable and verifiable.
+
+```yaml
+encryption:
+  enabled: true
+  type: aes256gcm
+  passphrase_env: PGKEEPER_ENCRYPTION_PASSPHRASE          # the NEW key
+  previous_passphrase_envs:
+    - PGKEEPER_ENCRYPTION_PASSPHRASE_2025                 # the retired key
+  # previous_keyfiles:
+  #   - /etc/pgkeeper/keys/2025.key
+```
+
+New backups encrypt under the primary key; `restore`/`verify` try each key in
+turn. Once every backup encrypted under a retired key has aged out of your
+retention window, drop it from the list. Keep the retired secrets available for
+at least as long as any backup that used them.
+
+## Immutable backups (S3 Object Lock)
+
+Retention safety rails guard against *PgKeeper's own* pruning deleting the wrong
+thing. They do nothing against a leaked S3 credential or a compromised host that
+deletes every object directly — the classic ransomware failure mode. On an
+S3-family destination whose bucket was created with **Object Lock enabled**, add
+a retention window so each uploaded backup is immutable (write-once, read-many)
+until it expires:
+
+```yaml
+storage:
+  - type: s3
+    bucket: my-pgkeeper-backups
+    object_lock:
+      mode: COMPLIANCE       # GOVERNANCE (privileged bypass) | COMPLIANCE (no bypass)
+      retain_days: 35        # keep >= your retention window
+```
+
+- **COMPLIANCE** cannot be shortened or removed by anyone (including the root
+  account) until the object expires; **GOVERNANCE** can be bypassed by a caller
+  holding `s3:BypassGovernanceRetention`.
+- Object Lock must be turned on when the bucket is created — it can't be added
+  later. PgKeeper only sets per-object retention on upload.
+- Set `retain_days` at least as long as your retention policy keeps backups, or
+  `prune` will try (and, under COMPLIANCE, fail) to delete still-locked objects.
+
 ## Artifacts on disk
 
 - The local storage adapter writes artifacts with mode `0600` and finalizes

@@ -219,7 +219,8 @@ module PgKeeper
 
         entries.each do |e|
           scope = e.only ? " (--only #{e.only.join(',')})" : " (all databases)"
-          say "#{e.label}: #{e.schedule.summary}#{scope}"
+          flags = e.flags.empty? ? "" : " #{e.flags.join(' ')}"
+          say "#{e.action} #{e.label}: #{e.schedule.summary}#{flags}#{scope}"
         end
       end
 

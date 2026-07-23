@@ -24,7 +24,8 @@ module PgKeeper
     # select the destination for a run and to label it in history).
     STORAGE_KEYS = {
       "local" => %w[type name path],
-      "s3" => %w[type name bucket region prefix endpoint access_key_id secret_access_key force_path_style],
+      "s3" => %w[type name bucket region prefix endpoint access_key_id secret_access_key
+                 force_path_style object_lock],
       "dropbox" => %w[type name root access_token refresh_token app_key app_secret],
       "google_drive" => %w[type name folder_id credentials_json credentials_file],
       "sharepoint" => %w[type name drive_id tenant_id client_id client_secret root],
@@ -55,9 +56,14 @@ module PgKeeper
       "grow_pct" => 0      # warn when it is this % larger (0 disables growth warnings)
     }.freeze
 
+    # Object Lock (WORM) retention modes for S3-family destinations. GOVERNANCE
+    # can be bypassed by a privileged caller; COMPLIANCE cannot be shortened or
+    # removed by anyone (including the root account) until the object expires.
+    OBJECT_LOCK_MODES = %w[GOVERNANCE COMPLIANCE].freeze
+
     attr_reader :source, :raw, :databases, :storage, :retention,
                 :compression, :encryption, :notifications, :workdir, :schedule, :web,
-                :timeouts, :anomaly
+                :timeouts, :anomaly, :maintenance
 
     # Load and validate config from a YAML file path.
     def self.load(path, env: ENV)
@@ -143,7 +149,7 @@ module PgKeeper
 
       reject_unknown_keys(@raw, %w[databases defaults compression encryption storage
                                    retention notifications workdir schedule web
-                                   timeouts anomaly], "(root)")
+                                   timeouts anomaly maintenance], "(root)")
 
       @workdir = string_or_default(@raw["workdir"], DEFAULT_WORKDIR, "workdir")
       @schedule = validate_schedule(@raw["schedule"], "schedule")
@@ -154,6 +160,13 @@ module PgKeeper
       @retention = build_retention(@raw["retention"])
       @notifications = build_notifications(@raw["notifications"])
       @web = build_web(@raw["web"])
+      build_scheduling_and_limits!
+    end
+
+    # The upkeep/limit sections: what to schedule beyond the backup, wall-clock
+    # deadlines, and anomaly thresholds.
+    def build_scheduling_and_limits!
+      @maintenance = build_maintenance(@raw["maintenance"])
       @timeouts = build_timeouts(@raw["timeouts"])
       @anomaly = build_anomaly(@raw["anomaly"])
     end
@@ -200,6 +213,67 @@ module PgKeeper
         else
           problem("anomaly.#{key} must be a non-negative integer")
         end
+      end
+    end
+
+    # The optional `maintenance:` block schedules the two upkeep jobs that keep
+    # backups *trustworthy* and *bounded* — verification and pruning — the same
+    # way `schedule:` schedules the backup itself. Without this, only backups
+    # could be automated; verify/prune had to be hand-wired into cron.
+    def build_maintenance(hash)
+      return {} if hash.nil?
+
+      unless hash.is_a?(Hash)
+        problem("`maintenance` must be a mapping")
+        return {}
+      end
+
+      reject_unknown_keys(hash, %w[verify prune], "maintenance")
+      {
+        "verify" => build_maintenance_task(hash["verify"], "verify", %w[schedule deep only]),
+        "prune" => build_maintenance_task(hash["prune"], "prune", %w[schedule apply only])
+      }.compact
+    end
+
+    def build_maintenance_task(cfg, name, allowed)
+      return nil if cfg.nil?
+
+      unless cfg.is_a?(Hash)
+        problem("maintenance.#{name} must be a mapping")
+        return nil
+      end
+
+      reject_unknown_keys(cfg, allowed, "maintenance.#{name}")
+      task = cfg.dup
+      task["schedule"] = validate_maintenance_schedule(task["schedule"], name)
+      task["only"] = normalize_only(task["only"], name) if task.key?("only")
+      coerce_maintenance_flags(task, name, allowed)
+      task
+    end
+
+    def validate_maintenance_schedule(value, name)
+      if value.nil?
+        problem("maintenance.#{name} requires a `schedule`")
+        return nil
+      end
+      validate_schedule(value, "maintenance.#{name}.schedule")
+    end
+
+    # `only:` accepts a single database name or a list of them.
+    def normalize_only(value, name)
+      list = Array(value).map(&:to_s)
+      if list.empty? || list.any?(&:empty?)
+        problem("maintenance.#{name}.only must be a database name or a non-empty list of names")
+        return nil
+      end
+      list
+    end
+
+    # `deep:` (verify) and `apply:` (prune) are booleans; coerce leniently, the
+    # same way `encryption.enabled` and `anomaly.enabled` are handled.
+    def coerce_maintenance_flags(task, _name, allowed)
+      %w[deep apply].each do |flag|
+        task[flag] = !!task[flag] if allowed.include?(flag) && task.key?(flag)
       end
     end
 
@@ -307,6 +381,7 @@ module PgKeeper
         problem("storage[#{idx}] (local) requires a `path`") unless entry["path"].is_a?(String)
       when "s3"
         problem("storage[#{idx}] (s3) requires a `bucket`") unless entry["bucket"].is_a?(String)
+        validate_object_lock(entry["object_lock"], idx)
       when "dropbox"
         validate_dropbox_credentials(entry, idx)
       when "google_drive"
@@ -314,6 +389,29 @@ module PgKeeper
       when "sharepoint"
         validate_sharepoint(entry, idx)
       end
+    end
+
+    # Object Lock makes uploaded backups immutable (WORM) for a retention window,
+    # so a leaked credential or a rogue `prune` can't delete them before they
+    # expire. The bucket itself must have Object Lock enabled (a create-time
+    # setting on S3); PgKeeper only sets per-object retention on upload.
+    def validate_object_lock(cfg, idx)
+      return if cfg.nil?
+
+      unless cfg.is_a?(Hash)
+        problem("storage[#{idx}] (s3) `object_lock` must be a mapping")
+        return
+      end
+
+      reject_unknown_keys(cfg, %w[mode retain_days], "storage[#{idx}] (s3) object_lock")
+      mode = cfg["mode"].to_s
+      unless OBJECT_LOCK_MODES.include?(mode)
+        problem("storage[#{idx}] (s3) object_lock.mode must be one of #{OBJECT_LOCK_MODES.join(', ')}")
+      end
+      days = cfg["retain_days"]
+      return if days.is_a?(Integer) && days.positive?
+
+      problem("storage[#{idx}] (s3) object_lock.retain_days must be a positive integer (days)")
     end
 
     # Dropbox needs either a direct access token or a full refresh-token triple.
@@ -368,9 +466,28 @@ module PgKeeper
         return { "enabled" => false }
       end
 
-      reject_unknown_keys(hash, %w[enabled type passphrase_env keyfile recipient], "encryption")
+      reject_unknown_keys(hash, %w[enabled type passphrase_env keyfile recipient
+                                   previous_passphrase_envs previous_keyfiles], "encryption")
       hash["enabled"] = !!hash["enabled"]
+      validate_previous_keys(hash)
       hash
+    end
+
+    # `previous_passphrase_envs` / `previous_keyfiles` list the *old* keys retired
+    # by a key rotation. New backups use the primary key; old backups stay
+    # decryptable (restore + verify) because these are tried in turn. Both must
+    # be lists of strings.
+    def validate_previous_keys(hash)
+      %w[previous_passphrase_envs previous_keyfiles].each do |key|
+        value = hash[key]
+        next if value.nil?
+
+        unless value.is_a?(Array) && value.all?(String)
+          problem("encryption.#{key} must be a list of strings")
+          next
+        end
+        hash[key] = value
+      end
     end
 
     def build_notifications(hash)
