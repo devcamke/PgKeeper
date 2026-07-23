@@ -41,6 +41,7 @@ module PgKeeper
       in_tmpdir do |dir|
         cfg = config(dir)
         cluster = cfg.pitr_clusters.first
+
         assert_equal ExitCode::SUCCESS, PITR::BaseBackup.new(cfg, logger: null_logger).run.exit_code
 
         data_dir = File.join(dir, "recovered")

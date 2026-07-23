@@ -7,6 +7,17 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **PITR Stage 5: recovery-chain verification (`verify --pitr`).** A base backup
+  is only restorable if the WAL that carries it forward is an unbroken run — a
+  single missing segment silently caps how far a restore can replay, and today
+  that is discovered only at recovery time. `pgkeeper verify --pitr [--cluster
+  NAME]` looks ahead of time: from the newest base's start segment, it walks the
+  archived WAL for that cluster and fails on the first gap (reporting the segment
+  that is missing), on a base with no recorded start segment, or when no WAL at
+  or after the base is archived at all. It is the offline, portable core of PITR
+  verification — catalog-only, no scratch server — so "a base whose WAL chain has
+  a gap fails" holds on every host; the deep scratch-restore-and-replay stays an
+  operator/CI step on the Stage 4 restore path.
 - **PITR Stage 4: point-in-time restore (`restore --to-time/--to-lsn/--to-name/latest`).**
   Recover a whole cluster to a moment you choose. `pgkeeper restore` gains PITR
   targets (with `--cluster` and `--data-dir`): it picks the newest base at or

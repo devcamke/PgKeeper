@@ -25,6 +25,23 @@ module PgKeeper
         nil
       end
 
+      # The segment immediately following +name+ on the same timeline, or nil if
+      # +name+ isn't a segment. With 16 MiB segments there are 256 (0x00..0xFF)
+      # per logical log file, so the segment number rolls over into the next log.
+      def next_segment(name)
+        m = name.to_s.match(/\A([0-9A-F]{8})([0-9A-F]{8})([0-9A-F]{8})\z/)
+        return nil unless m
+
+        timeline = m[1]
+        log = m[2].to_i(16)
+        seg = m[3].to_i(16) + 1
+        if seg > 0xFF
+          seg = 0
+          log += 1
+        end
+        format("%<tl>s%<log>08X%<seg>08X", tl: timeline, log: log, seg: seg)
+      end
+
       # An LSN ("hi/lo", hex) as a single comparable integer, or nil if malformed.
       def lsn_to_int(lsn)
         return nil if lsn.nil?

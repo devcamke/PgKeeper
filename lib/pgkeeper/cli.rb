@@ -130,8 +130,13 @@ module PgKeeper
     method_option :deep, type: :boolean, default: false,
                          desc: "Tier 3: restore into a scratch database and sanity-check it"
     method_option :only, type: :array, desc: "Only verify these database name(s)"
+    method_option :pitr, type: :boolean, default: false,
+                         desc: "Verify PITR recovery chains (base + unbroken archived WAL)"
+    method_option :cluster, type: :string, desc: "With --pitr: only this cluster (default: all)"
     def verify(selector = "latest")
       config = load_config
+      return verify_pitr(config) if options[:pitr]
+
       results = Verifier.new(config, logger: logger).verify(selector: selector, deep: options[:deep],
                                                             only: options[:only])
       print_verify(results)
@@ -424,6 +429,30 @@ module PgKeeper
         elsif opts[:to_name] then PITR::Restore::Target.new(type: :name, value: opts[:to_name])
         elsif opts[:to] == "latest" then PITR::Restore::Target.new(type: :latest, value: nil)
         else raise Error, "unknown PITR target (use --to latest, or --to-time / --to-lsn / --to-name)"
+        end
+      end
+
+      def verify_pitr(config)
+        clusters = config.pitr_clusters
+        if clusters.empty?
+          raise Error,
+                "no PITR clusters configured (add a `clusters:` entry with `pitr.enabled: true`)"
+        end
+
+        clusters = clusters.select { |c| c.name == options[:cluster] } if options[:cluster]
+        raise Error, "unknown or non-PITR cluster: #{options[:cluster]}" if clusters.empty?
+
+        results = clusters.map { |cluster| PITR::Verify.new(config, cluster, logger: logger).verify }
+        results.each { |result| print_pitr_verify(result) }
+        exit(results.all?(&:ok?) ? ExitCode::SUCCESS : ExitCode::FAILURE)
+      end
+
+      def print_pitr_verify(result)
+        if result.ok?
+          say "✓ #{result.cluster}: #{result.detail}", :green
+          say "    base #{result.base_label}, WAL #{result.from_segment}..#{result.to_segment}" if result.from_segment
+        else
+          say "✗ #{result.cluster}: #{result.detail}", :red
         end
       end
 
