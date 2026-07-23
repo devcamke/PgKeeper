@@ -85,6 +85,14 @@ All notable changes to PgKeeper. Versions map to the milestones in
   and header fills, tinted status pills (replacing plain colored text), and
   accent-colored buttons and form controls. Purely presentational — the
   templates, routes, data, and auth are unchanged.
+- **Modernized the Actions page.** The stacked forms are now a responsive grid
+  of action cards, each with an icon, selectable destination/option "chips"
+  (replacing bare checkboxes), and a toggle-switch confirmation gate; the
+  destructive Prune action reads in a danger accent. The remote-trigger recipes
+  moved into a titled panel, the jobs list gained a jump link, and it now
+  auto-refreshes while a job is running. Field names and the POST contract are
+  unchanged, so the CSRF/confirm guards and the JSON API behave exactly as
+  before.
 
 ### Added
 
