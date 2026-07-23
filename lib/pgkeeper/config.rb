@@ -3,6 +3,8 @@
 require "yaml"
 require "erb"
 
+require "pgkeeper/pitr/config"
+
 module PgKeeper
   # Loads and validates the declarative +pgkeeper.yml+ config.
   #
@@ -63,7 +65,7 @@ module PgKeeper
 
     attr_reader :source, :raw, :databases, :storage, :retention,
                 :compression, :encryption, :notifications, :workdir, :schedule, :web,
-                :timeouts, :anomaly, :maintenance
+                :timeouts, :anomaly, :maintenance, :clusters
 
     # Load and validate config from a YAML file path.
     def self.load(path, env: ENV)
@@ -112,6 +114,16 @@ module PgKeeper
       @databases.find { |db| db.name == name }
     end
 
+    # The cluster matching +name+, or nil.
+    def cluster(name)
+      @clusters.find { |c| c.name == name }
+    end
+
+    # Clusters with PITR enabled (the ones base backups / WAL archiving act on).
+    def pitr_clusters
+      @clusters.select(&:pitr?)
+    end
+
     # The deadline (seconds) for a class of command (:dump, :restore, :verify,
     # :query), or nil when disabled (a configured 0).
     def timeout(kind)
@@ -149,7 +161,7 @@ module PgKeeper
 
       reject_unknown_keys(@raw, %w[databases defaults compression encryption storage
                                    retention notifications workdir schedule web
-                                   timeouts anomaly maintenance], "(root)")
+                                   timeouts anomaly maintenance clusters], "(root)")
 
       @workdir = string_or_default(@raw["workdir"], DEFAULT_WORKDIR, "workdir")
       @schedule = validate_schedule(@raw["schedule"], "schedule")
@@ -160,6 +172,7 @@ module PgKeeper
       @retention = build_retention(@raw["retention"])
       @notifications = build_notifications(@raw["notifications"])
       @web = build_web(@raw["web"])
+      @clusters = build_clusters(@raw["clusters"])
       build_scheduling_and_limits!
     end
 
@@ -320,6 +333,44 @@ module PgKeeper
 
       DatabaseConfig.new(merged, global_compression: @compression).tap do |db|
         db.validation_problems.each { |p| problem("database #{name.inspect}: #{p}") }
+      end
+    end
+
+    # Physical clusters for PITR (Phase 12). Optional and separate from the
+    # logical `databases:` list — a cluster is the whole instance. Stage 0 parses
+    # and validates them; no base-backup/WAL behavior acts on them yet.
+    def build_clusters(list)
+      return [] if list.nil?
+
+      unless list.is_a?(Array)
+        problem("`clusters` must be a list")
+        return []
+      end
+
+      seen = {}
+      list.each_with_index.filter_map { |entry, idx| build_cluster(entry, idx, seen) }
+    end
+
+    def build_cluster(entry, idx, seen)
+      unless entry.is_a?(Hash)
+        problem("clusters[#{idx}] must be a mapping")
+        return nil
+      end
+
+      reject_unknown_keys(entry, ClusterConfig::KEYS, "clusters[#{idx}]")
+      name = entry["name"]
+      unless name.is_a?(String) && !name.strip.empty?
+        problem("clusters[#{idx}] is missing a non-empty `name`")
+        return nil
+      end
+      if seen[name]
+        problem("duplicate cluster name #{name.inspect}")
+        return nil
+      end
+      seen[name] = true
+
+      ClusterConfig.new(entry).tap do |c|
+        c.validation_problems.each { |p| problem("cluster #{name.inspect}: #{p}") }
       end
     end
 
