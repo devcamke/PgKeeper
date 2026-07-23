@@ -5,6 +5,16 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ## Unreleased
 
+### Documentation
+
+- **PITR design doc (`docs/PITR-DESIGN.md`).** An implementation-ready design for
+  Point-in-Time Recovery via WAL archiving (PLAN.md Phase 12): the cluster-scope
+  decision, `clusters:`/`pitr:` config surface, CLI and module layout, storage
+  data model, the coupled base+WAL retention algorithm and recovery-window rail,
+  the restore-to-target orchestration, prerequisites/observability (including the
+  stalled-replication-slot disk hazard), and a staged, per-PR rollout. No
+  behavior ships with the doc — it's the plan to review before code.
+
 ### Added
 
 - **"Run backup now" button on the dashboard's Runs page.** The Runs timeline
