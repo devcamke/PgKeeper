@@ -17,9 +17,11 @@ module PgKeeper
       [result, out.string]
     end
 
-    # Answers for a straight-through fresh-config run.
+    # Answers for a straight-through fresh-config run. Trailing answers:
+    # schedule, use-schedule?, enable-web?, web-port(blank=default), write?
     def fresh_script(name: "orders", schedule: "daily at 03:15", password: "pw")
-      "#{[name, 'db.internal', '5432', '', 'backup_user', password, schedule, 'y', 'y'].join("\n")}\n"
+      answers = [name, "db.internal", "5432", "", "backup_user", password, schedule, "y", "y", "", "y"]
+      "#{answers.join("\n")}\n"
     end
 
     def load(path)
@@ -42,6 +44,54 @@ module PgKeeper
         assert_equal ["orders"], config.databases.map(&:name)
         assert_equal "daily at 03:15", config.schedule
         assert_nil config.databases.first.schedule, "fresh config schedules globally, not per-db"
+      end
+    end
+
+    def test_sets_up_the_web_dashboard
+      in_tmpdir do |dir|
+        path = File.join(dir, "pgkeeper.yml")
+        result, output = run_wizard(fresh_script, path: path)
+
+        assert_equal "PGKEEPER_WEB_TOKEN", result.web_token_env
+        assert result.web_token, "a dashboard token is generated to export"
+        assert_includes output, "export PGKEEPER_WEB_TOKEN="
+        # The token is an ENV reference in the file, never the literal secret.
+        assert_includes File.read(path), %(token: <%= ENV["PGKEEPER_WEB_TOKEN"] %>)
+        refute_includes File.read(path), result.web_token
+
+        config = load(path)
+
+        assert_equal "127.0.0.1", config.web["bind"]
+        assert_equal 8321, config.web["port"]
+      end
+    end
+
+    def test_declining_the_web_dashboard_writes_no_web_block
+      in_tmpdir do |dir|
+        path = File.join(dir, "pgkeeper.yml")
+        # schedule, use?, web? -> n, write?
+        script = "#{['orders', 'db', '5432', '', 'u', 'pw', 'hourly', 'y', 'n', 'y'].join("\n")}\n"
+        result, = run_wizard(script, path: path)
+
+        assert_nil result.web_token_env
+        refute_includes File.read(path), "web:"
+      end
+    end
+
+    def test_existing_web_block_is_preserved_and_not_reprompted
+      in_tmpdir do |dir|
+        path = File.join(dir, "pgkeeper.yml")
+        run_wizard(fresh_script, path: path) # creates it WITH a web block
+
+        # Appending a second database: the wizard sees the existing web block and
+        # never asks again, so this script carries no web answer.
+        script = "#{['reporting', 'db2', '5433', '', 'ro', 'pw2', '0 2 * * *', 'y', 'y'].join("\n")}\n"
+        _result, output = run_wizard(script, path: path)
+
+        refute_includes output, "Enable the web dashboard?"
+        webs = File.read(path, encoding: "UTF-8").scan(/^web:/).length
+
+        assert_equal 1, webs, "still exactly one web block"
       end
     end
 
@@ -101,7 +151,7 @@ module PgKeeper
     def test_reprompts_on_an_invalid_schedule
       in_tmpdir do |dir|
         path = File.join(dir, "pgkeeper.yml")
-        answers = ["orders", "db", "5432", "", "u", "pw", "not a schedule", "daily at 03:15", "y", "y"]
+        answers = ["orders", "db", "5432", "", "u", "pw", "not a schedule", "daily at 03:15", "y", "n", "y"]
         _result, output = run_wizard("#{answers.join("\n")}\n", path: path)
 
         assert_includes output, "unrecognized schedule"
@@ -112,7 +162,7 @@ module PgKeeper
     def test_reprompts_on_an_invalid_port
       in_tmpdir do |dir|
         path = File.join(dir, "pgkeeper.yml")
-        script = "#{['orders', 'db', '99999', '5432', '', 'u', 'pw', 'hourly', 'y', 'y'].join("\n")}\n"
+        script = "#{['orders', 'db', '99999', '5432', '', 'u', 'pw', 'hourly', 'y', 'n', 'y'].join("\n")}\n"
         _result, output = run_wizard(script, path: path)
 
         assert_includes output, "port must be an integer between 1 and 65535"
@@ -133,8 +183,8 @@ module PgKeeper
     def test_connection_failure_can_be_overridden_to_save_anyway
       in_tmpdir do |dir|
         path = File.join(dir, "pgkeeper.yml")
-        # name, host, port, db, user, pw, [retry? -> n], [save anyway? -> y], schedule, use?, write?
-        script = "#{['orders', 'db', '5432', '', 'u', 'pw', 'n', 'y', 'hourly', 'y', 'y'].join("\n")}\n"
+        # name, host, port, db, user, pw, [retry? -> n], [save anyway? -> y], schedule, use?, web?, write?
+        script = "#{['orders', 'db', '5432', '', 'u', 'pw', 'n', 'y', 'hourly', 'y', 'n', 'y'].join("\n")}\n"
         result, output = run_wizard(script, path: path, prober: FAIL)
 
         assert_includes output, "connection failed"
@@ -161,8 +211,8 @@ module PgKeeper
           calls += 1
           calls == 1 ? Wizard::Probe.new(ok: false, detail: "down") : Wizard::Probe.new(ok: true, detail: "up")
         end
-        # ..., pw, [retry? -> y], schedule, use?, write?
-        script = "#{['orders', 'db', '5432', '', 'u', 'pw', 'y', 'hourly', 'y', 'y'].join("\n")}\n"
+        # ..., pw, [retry? -> y], schedule, use?, web?, write?
+        script = "#{['orders', 'db', '5432', '', 'u', 'pw', 'y', 'hourly', 'y', 'n', 'y'].join("\n")}\n"
         result, output = run_wizard(script, path: path, prober: flaky)
 
         assert_equal 2, calls
@@ -174,7 +224,8 @@ module PgKeeper
     def test_declining_the_write_leaves_no_file
       in_tmpdir do |dir|
         path = File.join(dir, "pgkeeper.yml")
-        script = "#{['orders', 'db', '5432', '', 'u', 'pw', 'hourly', 'y', 'n'].join("\n")}\n"
+        # schedule, use?, web? (declined), write? (declined)
+        script = "#{['orders', 'db', '5432', '', 'u', 'pw', 'hourly', 'y', 'n', 'n'].join("\n")}\n"
         result, output = run_wizard(script, path: path)
 
         assert_nil result

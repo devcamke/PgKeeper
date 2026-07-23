@@ -57,6 +57,12 @@ Backup schedule (daily at 03:15):
     next run: Sun 2026-07-26 03:15 UTC
 Use this schedule? [Y/n]
 
+Web dashboard
+`pgkeeper web` serves a monitoring dashboard and can trigger backups.
+Auth is required; the token is read from the environment, never inlined.
+Enable the web dashboard? [Y/n]
+Port (8321):
+
 Review
   - name: invoice_development
     host: 127.0.0.1
@@ -65,11 +71,16 @@ Review
     username: invoice
     password: <%= ENV["PGKEEPER_INVOICE_DEVELOPMENT_PASSWORD"] %>
     format: custom
+  + web dashboard on 127.0.0.1:8321
 Write config (create pgkeeper.yml)? [Y/n]
 ✓ Created pgkeeper.yml
 
 Set the database password (kept out of the config file)
   export PGKEEPER_INVOICE_DEVELOPMENT_PASSWORD='…'
+
+Set the dashboard token (kept out of the config file)
+  export PGKEEPER_WEB_TOKEN='<a generated token>'
+  Then start it:  pgkeeper web
 
 Next steps
   1. Verify:   pgkeeper validate  &&  pgkeeper doctor
@@ -95,6 +106,10 @@ What just happened:
   prints the exact variable to export.
 - **The schedule is validated and previewed** before it's accepted, so you see
   the next few real run times, not just a cron string you have to trust.
+- **The web dashboard is set up too.** If you enable it, the wizard generates a
+  strong auth token (printed as an `export PGKEEPER_WEB_TOKEN=…` line, stored in
+  the config only as an ENV reference) and writes a `web:` block — so
+  `pgkeeper web` works without any hand-editing.
 
 The generated `pgkeeper.yml` is a plain, commented file you own from here on:
 
@@ -129,6 +144,14 @@ retention:
   keep_daily: 7
   keep_weekly: 4
   keep_monthly: 6
+
+# Web dashboard (`pgkeeper web`). Auth is required; the token comes from the
+# environment. Binds to loopback — front it with a TLS proxy for remote access.
+web:
+  bind: 127.0.0.1
+  port: 8321
+  auth:
+    token: <%= ENV["PGKEEPER_WEB_TOKEN"] %>
 ```
 
 > **Prefer to skip the wizard?** Copy

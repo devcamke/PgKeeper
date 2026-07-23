@@ -7,6 +7,14 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **`pgkeeper connect` now sets up the web dashboard too.** The onboarding
+  wizard used to write the database and schedule but never a `web:` block, so
+  `pgkeeper web` failed with "auth is not configured" until you hand-edited the
+  config. The wizard now offers to enable the dashboard, generates a strong
+  auth token (printed as an `export PGKEEPER_WEB_TOKEN=…` line, stored in the
+  config only as an ENV reference — never inlined), and writes a `web:` block
+  with a loopback bind and your chosen port. On an existing config that already
+  has a `web:` block it doesn't ask, and never clobbers the one you have.
 - **`pgkeeper run` alias for `pgkeeper backup`.** `run` now dispatches to the
   backup command (mirroring the existing `onboard` → `connect` alias), so the
   most common action has a short, memorable name. `backup` is unchanged.
