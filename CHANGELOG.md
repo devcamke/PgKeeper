@@ -7,6 +7,30 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **PITR Stage 0: `clusters:` config + `doctor` prerequisites.** First step of
+  Phase 12 (design in `docs/PITR-DESIGN.md`), parsing/validation only — no
+  base-backup or WAL behavior yet. A new top-level `clusters:` block describes a
+  physical cluster (the whole instance, separate from the logical `databases:`
+  list) with an optional `pitr:` sub-block (`mode`, `slot`, `recovery_window`,
+  `base_backup.schedule`, `destinations`), fully validated like the rest of the
+  config. `pgkeeper doctor` now checks each PITR-enabled cluster's prerequisites
+  up front — `pg_basebackup`/`pg_receivewal` present and version-matched,
+  reachable server, `wal_level >= replica`, streaming capacity
+  (`max_wal_senders`), and a REPLICATION-capable role — so a misconfigured host
+  is caught before the first base backup, not at recovery time.
+
+### Documentation
+
+- **PITR design doc (`docs/PITR-DESIGN.md`).** An implementation-ready design for
+  Point-in-Time Recovery via WAL archiving (PLAN.md Phase 12): the cluster-scope
+  decision, `clusters:`/`pitr:` config surface, CLI and module layout, storage
+  data model, the coupled base+WAL retention algorithm and recovery-window rail,
+  the restore-to-target orchestration, prerequisites/observability (including the
+  stalled-replication-slot disk hazard), and a staged, per-PR rollout. No
+  behavior ships with the doc — it's the plan to review before code.
+
+### Added
+
 - **"Run backup now" button on the dashboard's Runs page.** The Runs timeline
   was read-only; kicking off a backup meant switching to the Actions tab. It now
   carries a Run backup button next to the filter, wired through the same

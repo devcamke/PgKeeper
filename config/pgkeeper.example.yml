@@ -56,6 +56,26 @@ databases:
       - events_raw           # skip a huge, reproducible table
     password: <%= ENV["PGKEEPER_ANALYTICS_PASSWORD"] %>
 
+# Point-in-Time Recovery (PITR) — physical clusters (Phase 12; design in
+# docs/PITR-DESIGN.md). A cluster is the whole instance (pg_basebackup + WAL),
+# separate from the logical `databases:` list above. Currently PARSED and
+# checked by `pgkeeper doctor`; base-backup / WAL behavior lands in later stages.
+# clusters:
+#   - name: app_cluster
+#     host: db.internal
+#     port: 5432
+#     username: <%= ENV["PGKEEPER_REPL_USER"] %>       # a role with REPLICATION
+#     password: <%= ENV["PGKEEPER_REPL_PASSWORD"] %>
+#     pitr:
+#       enabled: true
+#       mode: stream              # stream (pg_receivewal) | archive (bridge)
+#       slot: pgkeeper            # replication slot (stream mode)
+#       recovery_window: 7d       # keep enough base + WAL to recover this far back
+#       base_backup:
+#         schedule: "daily at 02:00"
+#       # WAL + base reuse the top-level storage/compression/encryption; an
+#       # optional `destinations:` list scopes which targets receive PITR data.
+
 # Compression of the artifact: none | gzip | zip | zstd.
 # `custom`/`directory` dumps are already compressed by pg_dump, so external
 # compression is skipped for them automatically. `zstd` requires the zstd

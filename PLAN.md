@@ -425,6 +425,10 @@ credentials.
 
 ## Phase 12 — Point-in-Time Recovery (PITR) via WAL Archiving
 
+> **Detailed design:** [docs/PITR-DESIGN.md](docs/PITR-DESIGN.md) — config surface,
+> module layout, coupled-retention algorithm, restore orchestration, failure modes,
+> and a staged (per-PR) rollout. Read that before implementing.
+
 **Goal:** shrink the recovery-point boundary from "your last logical dump" to "any moment
 you choose" — bounding data loss by the WAL-shipping interval (seconds-to-minutes) instead
 of the backup interval (hours-to-days). This is the one recovery capability logical dumps
