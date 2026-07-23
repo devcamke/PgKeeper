@@ -85,14 +85,21 @@ module PgKeeper
     end
 
     def test_retention_page_previews_next_prune
-      seed_backups
+      root = File.join(@dir, "backups")
+      # An older, unverified backup that the policy will prune; plus a verified
+      # backup and a newer one, both of which the safety rails protect.
+      seed_backup(root, "app", Time.utc(2026, 7, 19, 3, 15))
+      seed_backup(root, "app", Time.utc(2026, 7, 20, 3, 15), verified_at: Time.utc(2026, 7, 20, 4))
+      seed_backup(root, "app", Time.utc(2026, 7, 21, 3, 15))
 
       get "/retention"
 
       assert_equal 200, last_response.status
       assert_includes last_response.body, "keep_last"
-      # keep_last: 1 with two seeded sets → the older one is slated for deletion.
-      assert_includes last_response.body, "2026-07-20T031500Z"
+      # keep_last: 1 → the oldest, unverified set is slated for deletion.
+      assert_includes last_response.body, "2026-07-19T031500Z"
+      # ...but the last verified backup itself is never pruned (safety rail).
+      refute_includes last_response.body, "2026-07-20T031500Z"
     end
 
     def test_backups_page_lists_artifacts_with_verification_and_download_links

@@ -81,9 +81,9 @@ module PgKeeper
       assert_equal ["2026-01-03T000000Z"], remaining_labels
     end
 
-    def test_protects_backups_newer_than_last_verified
+    def test_protects_last_verified_backup_and_everything_newer
       # 4 daily backups; mark day 2 verified. keep_last:1 would drop days 1-3,
-      # but nothing newer than the verified day-2 may be pruned.
+      # but the last verified backup (day 2) and anything newer may not be pruned.
       4.times do |i|
         verified = i == 1 ? Time.utc(2026, 1, 2, 12) : nil
         seed_backup(@root, "app", Time.utc(2026, 1, 1) + (i * 86_400), verified_at: verified)
@@ -92,6 +92,7 @@ module PgKeeper
 
       remaining = remaining_labels
 
+      assert_includes remaining, "2026-01-02T000000Z", "the last verified backup must not be pruned"
       assert_includes remaining, "2026-01-03T000000Z", "newer-than-verified must be protected"
       assert_includes remaining, "2026-01-04T000000Z"
       refute_includes remaining, "2026-01-01T000000Z", "older-than-verified may be pruned"
