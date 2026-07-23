@@ -176,6 +176,20 @@ module PgKeeper
       end
     end
 
+    desc "connect", "Onboarding wizard: connect a database and schedule its backups, writing pgkeeper.yml"
+    def connect
+      path = resolve_config_path_for_write
+      Wizard.new(config_path: path, prompt: Prompt.new, logger: logger).run
+    rescue Prompt::Aborted => e
+      say_error e.message, :yellow
+      exit(ExitCode::FAILURE)
+    rescue Error => e
+      say_error e.message, :red
+      e.problems.each { |p| say_error "  - #{p}", :red } if e.respond_to?(:problems)
+      exit(ExitCode::FAILURE)
+    end
+    map "onboard" => :connect
+
     desc "web", "Serve the monitoring dashboard (auth required; binds to 127.0.0.1 by default)"
     method_option :bind, type: :string, desc: "Address to bind (default: web.bind or 127.0.0.1)"
     method_option :port, type: :numeric, desc: "Port to listen on (default: web.port or 8321)"
@@ -257,6 +271,15 @@ module PgKeeper
         say_error e.message, :red
         e.problems.each { |p| say_error "  - #{p}", :red }
         exit(ExitCode::FAILURE)
+      end
+
+      # Where the wizard writes. An explicit --config wins; otherwise reuse the
+      # first existing default (append mode) or fall back to ./pgkeeper.yml
+      # (create mode) so a brand-new host has a sensible target.
+      def resolve_config_path_for_write
+        return options[:config] if options[:config]
+
+        DEFAULT_CONFIG_PATHS.find { |p| File.file?(p) } || DEFAULT_CONFIG_PATHS.first
       end
 
       def resolve_config_path(required:)

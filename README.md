@@ -38,6 +38,12 @@ destination** independently. Every run is recorded to a SQLite history that powe
 
 ## What works today
 
+- **`pgkeeper connect`** — an interactive onboarding wizard that connects a database and
+  schedules its backups. It collects the connection details, **live-tests the credentials**
+  against the server, takes a backup schedule (validated, with a preview of the next few
+  runs), and writes `pgkeeper.yml` — generating a fresh commented config on a new host, or
+  appending to an existing one **without disturbing its comments or `<%= ENV[...] %>`
+  interpolations**. Passwords are stored as an env-var reference, never inlined.
 - **`pgkeeper doctor`** — checks that `pg_dump`/`pg_restore`/`pg_dumpall`/`psql` are on
   PATH, validates your config, health-checks every storage destination, confirms each
   database is reachable, and warns on `pg_dump`-vs-server version drift.
@@ -89,7 +95,8 @@ destination** independently. Every run is recorded to a SQLite history that powe
   catches a cron that silently never ran. Notifier failures are logged and never affect
   the backup itself.
 - **Scheduling** — set a `schedule:` (cron, natural language, or shorthands like
-  `daily at 03:15`), globally or per-database. `pgkeeper schedule install` emits
+  `daily at 03:15`), globally or per-database — interactively via `pgkeeper connect` or by
+  hand. `pgkeeper schedule install` emits
   **flock-guarded crontab lines** or **systemd service+timer units** (with
   `RandomizedDelaySec` stagger and `Persistent=true` catch-up); `pgkeeper schedule print`
   shows the resolved plan. For containers without cron/systemd, `pgkeeper daemon` runs the
@@ -129,6 +136,31 @@ failed), `2` total failure. Every run is recorded to a SQLite history store that
 Storage adapters share one contract (upload / download / list / delete / healthcheck with
 retry + backoff), so local, S3, and the in-memory test backend are provably
 interchangeable. Cloud SDKs are optional dependencies, lazy-loaded only when used.
+
+## Onboarding
+
+`pgkeeper connect` is the guided way in: it collects a database's connection details,
+**live-tests them against the server**, takes a validated backup schedule (with a preview
+of the next few runs), and writes `pgkeeper.yml` — a fresh commented config on a new host,
+or an appended entry on an existing one (comments and `<%= ENV[...] %>` interpolations
+preserved). Passwords are stored as an env-var reference, never inlined.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/wizard-connect-dark.png">
+    <img alt="pgkeeper connect — the onboarding wizard: connection details, a live connection test, a validated schedule with a preview of the next runs, a config review, and next-step guidance" src="docs/images/wizard-connect-light.png" width="82%">
+  </picture>
+</p>
+
+The credential test is a real `psql` round-trip (the same check `pgkeeper doctor` runs), so
+a typo or an unreachable server is caught up front — retry, save anyway, or abort:
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/wizard-connect-retry-dark.png">
+    <img alt="pgkeeper connect catching a refused connection and recovering after the server comes up on retry" src="docs/images/wizard-connect-retry-light.png" width="82%">
+  </picture>
+</p>
 
 ## The dashboard
 
@@ -181,9 +213,14 @@ CLI-only:
 mise install
 mise exec -- bundle install
 
-# 2. Write a config (copy the example and edit).
-cp config/pgkeeper.example.yml pgkeeper.yml
-export PGKEEPER_APP_PASSWORD=...        # secrets come from the environment
+# 2. Write a config — either run the onboarding wizard (it tests the connection,
+#    sets a schedule, and writes pgkeeper.yml) ...
+mise exec -- ruby -Ilib bin/pgkeeper connect -c pgkeeper.yml
+export PGKEEPER_ORDERS_PASSWORD=...     # the wizard prints the exact var to set
+
+#    ... or copy the annotated example and edit it by hand.
+# cp config/pgkeeper.example.yml pgkeeper.yml
+# export PGKEEPER_APP_PASSWORD=...      # secrets come from the environment
 
 # 3. Check the environment, then take a backup.
 mise exec -- ruby -Ilib bin/pgkeeper doctor  -c pgkeeper.yml

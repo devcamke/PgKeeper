@@ -3,6 +3,9 @@
 # Copy to pgkeeper.yml (or config/pgkeeper.yml) and edit. Secrets should come
 # from the environment via ERB interpolation — never commit real passwords.
 #
+# Prefer a guided setup? `pgkeeper connect` tests the connection, sets a
+# schedule, and writes a config like this one for you.
+#
 #   export PGKEEPER_APP_PASSWORD=...
 #   pgkeeper doctor -c pgkeeper.yml
 #   pgkeeper backup -c pgkeeper.yml
@@ -60,8 +63,7 @@ encryption:
 # via the web API. A NAS is just a `local` target pointing at the mounted share.
 # Run `pgkeeper destinations` to see the selectable tokens.
 storage:
-  - type: local
-    name: local            # optional friendly alias for --destinations / the API
+  - type: local            # selected as `local` for --destinations / the API
     path: /var/backups/pgkeeper/backups
 
   # A NAS/SMB/NFS share is a `local` target pointing at the mount point.
