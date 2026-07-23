@@ -144,11 +144,22 @@ module PgKeeper
     desc "restore [SELECTOR]", "Restore a backup into a database (destructive; guarded by --force)"
     method_option :database, type: :string, desc: "Which backed-up database to restore"
     method_option :target, type: :string, desc: "Target database name (default: same as source)"
-    method_option :force, type: :boolean, default: false, desc: "Overwrite a non-empty target database"
+    method_option :force, type: :boolean, default: false, desc: "Overwrite a non-empty target/data dir"
     method_option :jobs, type: :numeric, desc: "Parallel jobs for directory-format restores"
+    # PITR (Phase 12): recover a whole cluster to a point in time from a base
+    # backup + archived WAL. Any of these switches into PITR mode.
+    method_option :cluster, type: :string, desc: "PITR: cluster to recover"
+    method_option :data_dir, type: :string, desc: "PITR: target data directory to stage recovery into"
+    method_option :to_time, type: :string, desc: "PITR target: recover to this timestamp"
+    method_option :to_lsn, type: :string, desc: "PITR target: recover to this LSN"
+    method_option :to_name, type: :string, desc: "PITR target: recover to this named restore point"
+    method_option :to, type: :string, desc: "PITR target: `latest` (replay all archived WAL)"
+    method_option :action, type: :string, default: "promote", desc: "PITR: recovery_target_action (promote|pause)"
+    method_option :restore_bin, type: :string, default: "pgkeeper",
+                                desc: "PITR: pgkeeper path baked into the recovery restore_command"
     def restore(selector = "latest")
       config = load_config
-      run_restore(config, selector)
+      pitr_target?(options) ? run_pitr_restore(config) : run_restore(config, selector)
     rescue Error, EnvironmentError => e
       say_error e.message, :red
       exit(ExitCode::FAILURE)
@@ -391,6 +402,39 @@ module PgKeeper
 
         archiver.fetch(name, dest)
         say "fetched #{name} → #{dest}", :green
+      end
+
+      def pitr_target?(opts)
+        opts[:to_time] || opts[:to_lsn] || opts[:to_name] || opts[:to]
+      end
+
+      def run_pitr_restore(config)
+        cluster = resolve_pitr_cluster(config, options[:cluster])
+        raise Error, "PITR restore needs a target directory: --data-dir DIR" unless options[:data_dir]
+
+        result = PITR::Restore.new(config, cluster, logger: logger)
+                              .run(target: pitr_target(options), data_dir: options[:data_dir],
+                                   force: options[:force], action: options[:action], bin: options[:restore_bin])
+        print_pitr_restore(result)
+      end
+
+      def pitr_target(opts)
+        if opts[:to_time] then PITR::Restore::Target.new(type: :time, value: Time.parse(opts[:to_time]).utc)
+        elsif opts[:to_lsn] then PITR::Restore::Target.new(type: :lsn, value: opts[:to_lsn])
+        elsif opts[:to_name] then PITR::Restore::Target.new(type: :name, value: opts[:to_name])
+        elsif opts[:to] == "latest" then PITR::Restore::Target.new(type: :latest, value: nil)
+        else raise Error, "unknown PITR target (use --to latest, or --to-time / --to-lsn / --to-name)"
+        end
+      end
+
+      def print_pitr_restore(result)
+        say "✓ Staged recovery of cluster #{result.cluster} into #{result.data_dir}", :green
+        say "  base:   #{result.base_label}"
+        say "  target: #{result.target.describe}"
+        say ""
+        say "Start recovery — Postgres replays WAL to the target, then #{options[:action]}s:", :cyan
+        say "  pg_ctl -D #{result.data_dir} start"
+        say "The restore_command runs `pgkeeper wal fetch`, so its config + secrets must be reachable."
       end
 
       def print_report(report)

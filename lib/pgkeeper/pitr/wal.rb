@@ -24,6 +24,16 @@ module PgKeeper
       rescue ArgumentError, TypeError
         nil
       end
+
+      # An LSN ("hi/lo", hex) as a single comparable integer, or nil if malformed.
+      def lsn_to_int(lsn)
+        return nil if lsn.nil?
+
+        high, low = lsn.to_s.split("/", 2)
+        (Integer(high, 16) << 32) | Integer(low, 16)
+      rescue ArgumentError, TypeError
+        nil
+      end
     end
   end
 end

@@ -100,3 +100,42 @@ automatically; for now apply them manually when moving to a new cluster.)
 - Run your application's smoke tests against the restored database.
 - If this was a disaster-recovery restore, take a fresh backup of the recovered
   database once it's confirmed healthy.
+
+## Point-in-time recovery (PITR)
+
+Logical restore (above) brings back a database from a dump. **PITR** rebuilds a
+whole cluster from a physical base backup plus archived WAL, recovered to a
+moment you choose. Prerequisites: a `clusters:` entry with `pitr.enabled`, base
+backups (`pgkeeper basebackup`), and archived WAL (`pgkeeper wal`). Check
+readiness with `pgkeeper doctor`.
+
+Stage a recovery-ready data directory:
+
+```sh
+pgkeeper restore --cluster main --data-dir /var/lib/postgresql/recovered \
+  --to-time "2026-07-23 14:55:00+00"        # or --to-lsn / --to-name / --to latest
+  # --restore-bin /usr/local/bin/pgkeeper   # absolute pgkeeper path for restore_command
+```
+
+This picks the newest base at or before the target, extracts it into the data
+directory, and writes the recovery config: a `restore_command` that fetches each
+WAL segment via `pgkeeper wal fetch` (reversing compression/encryption),
+`recovery_target_*`, and `recovery.signal`. Then **you** start Postgres — it
+replays WAL to the target and promotes:
+
+```sh
+pg_ctl -D /var/lib/postgresql/recovered start
+```
+
+Notes for the 3 a.m. reader:
+
+- **Config lives where your packaging puts it.** On Debian/Ubuntu,
+  `postgresql.conf`/`pg_hba.conf` are under `/etc/postgresql/...`, not the data
+  directory — so a base backup won't contain them. Provide them before starting
+  the recovered server.
+- **The `restore_command` runs as the `postgres` user**, so the `--restore-bin`
+  path, the config, and the WAL storage must all be reachable by it (and any
+  encryption passphrase present in its environment).
+- **Recovery target format:** `--to-time` takes a normal timestamp with an
+  offset (`2026-07-23 14:55:00+00`), which is what Postgres expects.
+- Restores are **CLI-only** — never a dashboard action.

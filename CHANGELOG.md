@@ -7,6 +7,17 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **PITR Stage 4: point-in-time restore (`restore --to-time/--to-lsn/--to-name/latest`).**
+  Recover a whole cluster to a moment you choose. `pgkeeper restore` gains PITR
+  targets (with `--cluster` and `--data-dir`): it picks the newest base at or
+  before the target, materializes it into the data directory, and writes the
+  recovery configuration — a `restore_command` that pulls each WAL segment
+  through `pgkeeper wal fetch` (reversing compression/encryption), the
+  `recovery_target_*`, and `recovery.signal`. The operator then starts Postgres,
+  which replays WAL to the target and promotes. Destructive and guarded (refuses
+  a non-empty data dir without `--force`, never a running one); restores stay
+  CLI-only. `--restore-bin` bakes an absolute pgkeeper path into the
+  restore_command. New PITR runbook in [docs/RESTORE.md](docs/RESTORE.md).
 - **PITR Stage 3: coupled base + WAL retention.** A base backup and the WAL
   needed to recover *from* it are one unit; `pgkeeper prune` now treats them that
   way. Base and WAL artifacts are kept out of the logical-dump GFS policy and
