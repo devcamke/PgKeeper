@@ -55,6 +55,22 @@ module PgKeeper
     end
     map "run" => :backup
 
+    desc "basebackup", "Take a physical base backup of a PITR cluster (Phase 12; see clusters:)"
+    method_option :cluster, type: :string, desc: "Only back up this cluster (default: all PITR clusters)"
+    method_option :destinations, type: :array,
+                                 desc: "Only ship to these destination(s), by name or type (default: all)"
+    def basebackup
+      config = load_config
+      only = options[:cluster] ? [options[:cluster]] : nil
+      report = PITR::BaseBackup.new(config, logger: logger)
+                               .run(only: only, destinations: options[:destinations])
+      print_report(report)
+      exit(report.exit_code)
+    rescue Error => e
+      say_error e.message, :red
+      exit(ExitCode::FAILURE)
+    end
+
     desc "destinations", "List configured storage destinations and the tokens that select them"
     def destinations
       config = load_config

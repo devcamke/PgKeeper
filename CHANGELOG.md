@@ -7,6 +7,15 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **PITR Stage 1: `pgkeeper basebackup`.** Take a physical base backup of a PITR
+  cluster with `pg_basebackup`, then run it through the same package → compress →
+  encrypt → manifest → fan-out pipeline as logical dumps — PITR is just another
+  producer on the existing conveyor. The base is captured with
+  `--wal-method=fetch` so it is standalone-restorable today; continuous WAL
+  archiving (which unlocks point-in-time targets) is Stage 2. `basebackup
+  [--cluster N] [--destinations …]` reports and records to run-history like
+  `backup`, the artifact is cataloged as `kind: base`, and it appears in
+  `pgkeeper list`.
 - **PITR Stage 0: `clusters:` config + `doctor` prerequisites.** First step of
   Phase 12 (design in `docs/PITR-DESIGN.md`), parsing/validation only — no
   base-backup or WAL behavior yet. A new top-level `clusters:` block describes a
