@@ -54,7 +54,7 @@ Gem::Specification.new do |spec|
 
   # Ruby 4 no longer ships these as default gems, so declare them explicitly
   # rather than relying on them being present in the standard library.
-  spec.add_dependency "erb", "~> 4.0"
+  spec.add_dependency "erb", ">= 4", "< 7"
   spec.add_dependency "logger", "~> 1.6"
 
   # Cloud storage SDKs are intentionally NOT hard dependencies — each cloud
