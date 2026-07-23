@@ -16,6 +16,14 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **Schedule page on the dashboard.** Scheduling was CLI-only (`pgkeeper
+  schedule print`); the browser only hinted at it via the overview's "next run"
+  column. A new **Schedule** tab renders the full resolved plan — one row per
+  job (backup, plus any `maintenance:` verify/prune) with its scope, human
+  cadence, normalized cron, and the next three run times. It reads the same
+  `Scheduler.entries` resolution the CLI and the cron/systemd installers use, so
+  the browser and the crontab never disagree. Read-only, matching the page's
+  intent — activation stays with `schedule install` / `daemon`.
 - **Download a whole backup set as one zip (dashboard).** The Backups page
   listed a dump and its manifest as two separate links, so grabbing a complete
   backup meant several clicks per artifact — and more when a run also captured

@@ -1,0 +1,35 @@
+<h1>Schedule</h1>
+<%- if @plan.empty? -%>
+<p class="muted">No schedule configured — set <span class="mono">schedule:</span> in your
+config (or run <span class="mono">pgkeeper connect</span>), then a
+<span class="mono">maintenance:</span> block to schedule verify and prune too.</p>
+<%- else -%>
+<table>
+  <tr><th>Job</th><th>Scope</th><th>Schedule</th><th>Cron</th><th>Next runs (UTC)</th></tr>
+  <%- @plan.each do |row| -%>
+  <tr>
+    <td>
+      <%= pill(row.action, "") %>
+      <%- unless row.flags.empty? -%><span class="mono muted"><%= h(row.flags.join(' ')) %></span><%- end -%>
+    </td>
+    <td><%= h(row.scope) %></td>
+    <td><%= h(row.cadence) %></td>
+    <td class="mono"><%= h(row.cron) %></td>
+    <td>
+      <%- if row.next_runs.empty? -%>
+      <span class="muted">—</span>
+      <%- else -%>
+      <%- row.next_runs.each do |t| -%>
+      <div class="mono"><%= h(fmt_time(t)) %></div>
+      <%- end -%>
+      <%- end -%>
+    </td>
+  </tr>
+  <%- end -%>
+</table>
+<p class="muted">This is the plan resolved from your config — the same one
+<span class="mono">pgkeeper schedule print</span> shows. It only fires once it's wired up:
+<span class="mono">pgkeeper schedule install</span> (crontab lines) or
+<span class="mono">--systemd</span> (timer units), or <span class="mono">pgkeeper daemon</span>
+in a container. To run a job right now, use the <a href="/actions">actions</a> page.</p>
+<%- end -%>

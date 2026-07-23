@@ -174,6 +174,65 @@ module PgKeeper
       assert_equal 404, last_response.status, "unknown destinations must 404"
     end
 
+    def test_schedule_page_lists_the_backup_plan_with_cron_and_next_runs
+      get "/schedule"
+
+      assert_equal 200, last_response.status
+      body = last_response.body
+
+      assert_includes body, "backup"
+      assert_includes body, "all databases"
+      assert_includes body, "daily at 03:15", "the human cadence is shown"
+      assert_includes body, "15 3 * * *", "the global daily 03:15 schedule renders its cron"
+      assert_match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}Z/, body, "a next-run timestamp is shown")
+      assert_includes body, "/schedule", "the Schedule nav link is present"
+    end
+
+    def test_schedule_page_shows_maintenance_verify_and_prune_jobs
+      maint = <<~YAML
+        maintenance:
+          verify:
+            schedule: weekly on sunday at 04:00
+            deep: true
+          prune:
+            schedule: daily at 05:00
+            apply: true
+      YAML
+      maint_app = Web::App.new(web_config(@dir, maint), logger: null_logger, actions: FakeActions.new)
+
+      response = Rack::Test::Session.new(maint_app).get("/schedule")
+
+      assert_equal 200, response.status
+      body = response.body
+
+      assert_includes body, "verify"
+      assert_includes body, "--deep"
+      assert_includes body, "0 4 * * 0", "weekly Sunday 04:00 verify cron"
+      assert_includes body, "prune"
+      assert_includes body, "--apply"
+      assert_includes body, "0 5 * * *", "daily 05:00 prune cron"
+    end
+
+    def test_schedule_page_reports_when_nothing_is_scheduled
+      config = Config.parse(<<~YAML, source: "test")
+        workdir: #{@dir}
+        databases:
+          - name: app
+        storage:
+          - type: local
+            path: #{@dir}/backups
+        web:
+          auth:
+            token: #{WebHelpers::TOKEN}
+      YAML
+      unscheduled = Web::App.new(config, logger: null_logger, actions: FakeActions.new)
+
+      response = Rack::Test::Session.new(unscheduled).get("/schedule")
+
+      assert_equal 200, response.status
+      assert_includes response.body, "No schedule configured"
+    end
+
     def test_api_status_contract
       seed_backups
       seed_history(@config)

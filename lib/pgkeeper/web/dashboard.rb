@@ -28,6 +28,9 @@ module PgKeeper
       DestinationStatus = Struct.new(:name, :type, :healthy, :error, :set_count, :total_bytes,
                                      keyword_init: true)
 
+      # One scheduled job (backup / verify / prune) as the Schedule page shows it.
+      ScheduleRow = Struct.new(:action, :flags, :scope, :cadence, :cron, :next_runs, keyword_init: true)
+
       def initialize(config, logger: PgKeeper.logger)
         @config = config
         @logger = logger
@@ -76,6 +79,27 @@ module PgKeeper
 
       def retention_preview
         Pruner.new(@config, logger: @logger).prune(apply: false)
+      end
+
+      # The scheduled plan resolved from the config — one row per job (backup,
+      # and any maintenance verify/prune), each with its cron and the next few
+      # run times. Empty when nothing is scheduled. This is the same resolution
+      # the CLI's `schedule print` and the installers use, so the browser and the
+      # crontab never disagree.
+      def schedule_plan
+        Scheduler.entries(@config).map do |entry|
+          ScheduleRow.new(
+            action: entry.action.to_s,
+            flags: entry.flags,
+            scope: entry.only ? "only #{entry.only.join(', ')}" : "all databases",
+            cadence: entry.schedule.expression,
+            cron: entry.schedule.to_cron,
+            next_runs: next_runs(entry.schedule)
+          )
+        end
+      rescue StandardError => e
+        @logger.error("schedule plan failed", error: e.message, error_class: e.class.name)
+        []
       end
 
       # Locate one artifact by destination name + remote path, returning
@@ -171,6 +195,21 @@ module PgKeeper
         entry&.schedule&.next_time
       rescue StandardError
         nil
+      end
+
+      # The next +count+ fire times of a schedule, each stepped one second past
+      # the last so consecutive occurrences aren't collapsed. Mirrors the
+      # wizard's schedule preview.
+      def next_runs(schedule, count: 3)
+        from = Time.now
+        Array.new(count) do
+          from = schedule.next_time(from: from)
+          run = from
+          from += 1
+          run
+        end
+      rescue StandardError
+        []
       end
 
       # Latest verification state per database, read from the primary (local
