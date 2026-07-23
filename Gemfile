@@ -5,7 +5,7 @@ source "https://rubygems.org"
 gemspec
 
 group :development, :test do
-  gem "minitest", "~> 5.20"
+  gem "minitest", "~> 6.0"
   gem "rack-test", "~> 2.1", require: false
   gem "rake", "~> 13.0"
   gem "rubocop", "~> 1.60", require: false
@@ -14,7 +14,7 @@ group :development, :test do
   # Stubs HTTP so webhook / dead-man's-switch notifier tests need no network.
   gem "webmock", "~> 3.19", require: false
   # Line coverage, opt-in via COVERAGE=1 so the default test loop stays fast.
-  gem "simplecov", "~> 0.22", require: false
+  gem "simplecov", "~> 1.0", require: false
 end
 
 # The optional web dashboard (`pgkeeper web`). rack is the app framework; puma
@@ -23,7 +23,7 @@ end
 # dashboard. They live here so the test suite can exercise the dashboard with
 # rack-test.
 group :web, :test do
-  gem "puma", ">= 6.4", "< 8"
+  gem "puma", ">= 6.4", "< 9"
   gem "rack", "~> 3.1"
 end
 

@@ -41,7 +41,7 @@ Gem::Specification.new do |spec|
 
   # zip archiving bundles a dump + its manifest into one shareable file; rubyzip
   # is pure Ruby, so it's a safe hard dependency.
-  spec.add_dependency "rubyzip", "~> 2.3"
+  spec.add_dependency "rubyzip", ">= 2.3", "< 4.0"
 
   # Email notifications (SMTP + TLS) and the SQLite run-history store that powers
   # `pgkeeper status`.
