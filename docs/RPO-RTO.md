@@ -144,8 +144,9 @@ alone are not enough. Add continuous WAL archiving / PITR:
 
 A common, robust pattern is **both**: PITR for a tight RPO, and PgKeeper for
 verifiable, portable, encrypted logical dumps fanned out to independent
-destinations as a second, provably-restorable line of defense. PITR guidance is on
-the PgKeeper roadmap (PLAN.md, Phase 11).
+destinations as a second, provably-restorable line of defense. Native PITR — WAL
+archiving, base backups, and `restore --to-time` — is a dedicated phase on the
+PgKeeper roadmap (PLAN.md, Phase 12).
 
 ---
 
