@@ -63,6 +63,7 @@ module PgKeeper
         when "/runs" then page_runs(request)
         when %r{\A/runs/([^/]+)\z} then page_run(Regexp.last_match(1))
         when "/retention" then page_retention
+        when "/schedule" then page_schedule
         when "/backups" then page_backups
         when "/download" then download(request)
         when "/download-set" then download_set(request)
@@ -142,6 +143,10 @@ module PgKeeper
         html render_view("retention", title: "Retention",
                                       policy: @config.retention,
                                       preview: @dashboard.retention_preview)
+      end
+
+      def page_schedule
+        html render_view("schedule", title: "Schedule", plan: @dashboard.schedule_plan)
       end
 
       def page_backups
