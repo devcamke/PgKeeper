@@ -20,9 +20,9 @@ full multi-phase build plan, [CHANGELOG.md](CHANGELOG.md) for what shipped when,
 > there is no WAL archiving / point-in-time recovery, so **your recovery point is your
 > last completed dump**: a restore loses everything written since then. Your RPO is
 > therefore your backup interval — schedule accordingly. If you need minutes-or-seconds
-> RPO, pair PgKeeper with a PITR tool. See **[docs/RPO-RTO.md](docs/RPO-RTO.md)** for how
-> to set an RPO/RTO SLA you can keep; PITR guidance is on the post-v1 backlog (PLAN.md
-> Phase 11).
+> RPO, pair PgKeeper with a PITR tool today. See **[docs/RPO-RTO.md](docs/RPO-RTO.md)** for
+> how to set an RPO/RTO SLA you can keep; native WAL archiving / PITR is a planned phase
+> (PLAN.md Phase 12).
 
 ## How it works
 

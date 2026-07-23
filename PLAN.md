@@ -408,9 +408,9 @@ credentials.
 
 ## Phase 11 — Hardening & Nice-to-Haves (post-v1 backlog)
 
-- **WAL archiving / PITR**: logical dumps lose everything since the last dump. Document the
-  gap clearly in v1; later integrate `pg_receivewal`/`pgBackRest` guidance or basic WAL
-  shipping for point-in-time recovery.
+- **WAL archiving / PITR**: logical dumps lose everything since the last dump. Documented as
+  a boundary in v1 (`docs/RPO-RTO.md`); **now a dedicated phase — see Phase 12** — rather
+  than a loose backlog line.
 - Very-large-DB support: directory format + `--jobs`, per-table parallel strategies,
   bandwidth throttling for uploads.
 - Metrics endpoint / Prometheus textfile exporter (last success timestamp, duration, size).
@@ -420,6 +420,63 @@ credentials.
 - Sensitive-data filtering (exclude tables / anonymization hooks) for dev-copy exports.
 - Dashboard extras: multi-user accounts/roles, restore-from-browser (if ever, behind heavy
   guards), historical charts beyond the v1 sparklines.
+
+---
+
+## Phase 12 — Point-in-Time Recovery (PITR) via WAL Archiving
+
+**Goal:** shrink the recovery-point boundary from "your last logical dump" to "any moment
+you choose" — bounding data loss by the WAL-shipping interval (seconds-to-minutes) instead
+of the backup interval (hours-to-days). This is the one recovery capability logical dumps
+structurally cannot provide, and the most-requested step beyond v1.
+
+**Why it's a phase, not a flag:** PITR is a different backup *model*, not a bigger dump. It
+pairs a periodic **physical base backup** (`pg_basebackup`) with a **continuous stream of
+WAL segments**; recovery replays WAL from a base up to a chosen target (time, LSN, or named
+restore point). It coexists with — does not replace — the logical-dump pipeline: logical
+dumps stay the portable, cross-version, selective-restore path; PITR adds low-RPO recovery
+for a specific cluster. Both remain first-class.
+
+- **WAL archiving (`WAL::Archiver`)** — ship completed WAL segments to the same storage
+  destinations the dump pipeline already fans out to. Two supported modes:
+  - `pg_receivewal` as a managed streaming child (a long-lived process the daemon
+    supervises, giving near-real-time, gap-free capture with its own replication slot), and
+  - a pull/archive_command bridge for hosts where PgKeeper can only see an archive directory.
+  - Reuse the Phase 4 storage adapters (upload/list/delete/healthcheck), so WAL lands in
+    Local / S3 / B2 / R2 / Spaces exactly like dumps, with the same retry/backoff and
+    per-destination independence.
+- **Base backups (`Backup::Base` via `pg_basebackup`)** — periodic physical base backups
+  (their own `schedule:`), compressed and encrypted through the existing Phase 3 pipeline,
+  manifested (base LSN, timeline, server version) like every other artifact.
+- **Coupled retention** — a base backup and the WAL needed to recover *from* it are one unit.
+  Extend Phase 5 retention so pruning a base **never** strands WAL that a surviving base
+  still needs, and never deletes WAL required to reach the recovery horizon. New safety rail:
+  refuse to prune below the configured **recovery window** (e.g. "keep 7 days of PITR").
+- **`pgkeeper restore --to <target>`** — extend the restore command with PITR targets:
+  `--to-time`, `--to-lsn`, `--to-name` (named restore point), or `latest`. Fetch the right
+  base + WAL range, stage `recovery.signal` + `restore_command`, and drive Postgres recovery,
+  with the same `--force`/target-safety guards as logical restore. Runbook in
+  `docs/RESTORE.md` gets a PITR section (the 3 a.m. reader needs the exact `--to-time` recipe).
+- **`pgkeeper verify --pitr`** — deep verification for PITR: restore a base into a scratch
+  cluster, replay a bounded WAL range, and assert it reaches a consistent recovery point.
+  A base whose WAL chain has a gap **fails** — same philosophy as Tier-3 dump verification.
+- **Observability** — WAL-archiving lag (age of the newest archived segment) and the current
+  recovery window surface in `status`, the dashboard overview, `metrics`/Prometheus, and the
+  dead-man's switch, so "WAL shipping silently stopped" is loud, not discovered at restore.
+- **`doctor` / config** — validate PITR prerequisites up front: `wal_level >= replica`,
+  a reachable replication slot / sufficient `max_wal_senders`, `pg_basebackup` present and
+  version-matched, and archive-destination writability. A `pitr:` config block (per cluster)
+  carries mode, base-backup schedule, recovery window, and destination selection.
+
+**Tests:** Dockerized-Postgres integration — seed → base backup → generate WAL by writing
+rows with recorded timestamps/LSNs → restore `--to-time`/`--to-lsn` → assert the cluster
+contains exactly the rows written before the target and none after; gap-in-WAL detection
+fails verify; retention never strands required WAL (property test over base/WAL timelines);
+`pg_receivewal` supervision restarts cleanly and resumes without a gap.
+
+**Exit criteria:** from a base backup plus archived WAL, `pgkeeper restore --to-time <ts>`
+recovers a cluster to that instant in CI, and retention/verify keep the WAL chain provably
+intact.
 
 ---
 
@@ -441,7 +498,9 @@ credentials.
 | Secrets in config files | Phase 1 (ENV/ERB, pgpass support) |
 | Unauthenticated dashboard exposing backup data | Phase 9 (auth + localhost bind + CSRF from day one) |
 | Restore triggered by a stray web click | Phase 9 (restores stay CLI-only) |
-| PITR expectations vs logical dumps | Phase 11 (documented gap, future WAL support) |
+| PITR expectations vs logical dumps | Phase 6/10 (documented boundary) → Phase 12 (WAL archiving + PITR restore) |
+| Pruning a base backup stranding the WAL it needs | Phase 12 (coupled base+WAL retention, recovery-window rail) |
+| WAL shipping silently stopping | Phase 12 (WAL-lag in status/dashboard/metrics/dead-man's switch) |
 
 ---
 
@@ -465,4 +524,5 @@ credentials.
 | **v0.2** | 3–4 | Compressed/zipped, optionally encrypted, multi-destination cloud uploads |
 | **v0.3** | 5–6 | Retention + verified restores |
 | **v1.0** | 7–10 | Email reporting, scheduling installer, web dashboard, Docker, docs — production-ready |
-| **v1.x** | 11 | PITR guidance, metrics, anomaly detection, dashboard extras |
+| **v1.x** | 11 | Metrics, anomaly detection, very-large-DB support, dashboard extras |
+| **v2.0** | 12 | Point-in-time recovery: WAL archiving + base backups + `restore --to-time` |

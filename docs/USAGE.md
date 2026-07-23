@@ -31,9 +31,9 @@ dashboard.
 
 **The one limitation to plan around:** PgKeeper takes *logical dumps*. A
 restore recovers to the moment of the last backup — not the last second.
-There is no WAL archiving / point-in-time recovery (yet; see PLAN.md
-Phase 11). Choose a backup frequency that matches how much data you can
-afford to lose.
+There is no WAL archiving / point-in-time recovery yet — it's a planned phase
+(see PLAN.md Phase 12). Choose a backup frequency that matches how much data
+you can afford to lose.
 
 ## 2. Requirements
 
