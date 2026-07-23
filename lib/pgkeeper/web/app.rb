@@ -254,7 +254,11 @@ module PgKeeper
       end
 
       def render_erb(name, assigns)
-        template = File.read(File.join(VIEWS, "#{name}.erb"))
+        # Read as UTF-8 explicitly: the templates contain non-ASCII glyphs (→, —,
+        # status icons), and ERB compiles them into Ruby source. Relying on the
+        # process's default external encoding would break rendering under a
+        # non-UTF-8 locale (e.g. LANG=C).
+        template = File.read(File.join(VIEWS, "#{name}.erb"), encoding: "UTF-8")
         ERB.new(template,
                 trim_mode: "-").result(ViewContext.new(assigns.merge(csrf_token: @csrf_token)).binding_for_erb)
       end

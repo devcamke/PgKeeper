@@ -2,7 +2,7 @@
 <%- @destinations.each do |(name, sets, error)| -%>
 <h2 class="mono"><%= h(name) %></h2>
 <%- if error -%>
-<p class="bad"><%= h(error) %></p>
+<%= notice(error, kind: :bad) %>
 <%- elsif sets.empty? -%>
 <p class="muted">No backups on this destination.</p>
 <%- else -%>
@@ -21,7 +21,7 @@
       <%= "raw" if [artifact.compression, artifact.encryption].all? { |x| x.to_s == "none" } %>
     </td>
     <%- if artifact.verified_at -%>
-    <td title="<%= h(fmt_time(artifact.verified_at)) %>"><%= pill(artifact.verified_tier, "ok") %></td>
+    <td><%= tip(pill(artifact.verified_tier, "ok"), fmt_time(artifact.verified_at)) %></td>
     <%- else -%>
     <td class="muted">-</td>
     <%- end -%>

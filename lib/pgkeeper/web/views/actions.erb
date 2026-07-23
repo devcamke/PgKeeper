@@ -1,6 +1,6 @@
 <h1>Actions</h1>
 <%- if @message -%>
-<p class="msg"><%= h(@message) %></p>
+<%= notice(@message, kind: flash_kind(@message), dismiss: "/actions") %>
 <%- end -%>
 <p class="lead">Every action runs through the same lock as scheduled runs — a click can never
 start a second concurrent pipeline. Long actions run in the background; results appear in the
