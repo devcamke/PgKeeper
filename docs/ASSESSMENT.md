@@ -23,6 +23,15 @@ customer, and it should lead every assurance conversation: PgKeeper takes **logi
 dumps, not point-in-time recovery (PITR)**. Your recovery point is the last dump.
 Details in [Availability](#availability--the-honest-limit) below.
 
+> **Update (Phase 12 shipped):** native PITR now exists — physical base backups
+> (`pgkeeper basebackup`), continuous WAL archiving (`pgkeeper wal`), point-in-time
+> `restore --to-time/--to-lsn/--to-name`, coupled base+WAL retention, offline chain
+> verification (`verify --pitr`), and WAL-lag/recovery-window observability with a
+> dead-man's switch. The boundary below is no longer absolute: for a `clusters:`
+> entry with `pitr.enabled`, RPO drops to seconds-to-minutes. Logical dumps remain
+> the default and the portable, per-database line of defense. See
+> [RPO-RTO.md](RPO-RTO.md) and [PITR-DESIGN.md](PITR-DESIGN.md).
+
 For most SaaS apps, internal tools, and SMB databases, PgKeeper is **deployable
 today** and would materially improve backup posture.
 
@@ -124,14 +133,19 @@ The evidence trail a business needs for an audit or an RPO/RTO commitment:
 
 ### Availability — the honest limit
 
-Because PgKeeper takes **logical dumps with no WAL archiving / PITR**, the
-**recovery point is the last dump** — a restore loses everything written since
-then. If a customer needs seconds-of-data-loss guarantees, PgKeeper alone does not
-meet that; they need PITR (pgBackRest / `pg_receivewal`) alongside or instead.
+In its **default logical-dump mode**, PgKeeper's **recovery point is the last
+dump** — a restore loses everything written since then. This still frames any
+availability conversation: pick a backup interval matched to the loss the business
+can tolerate, and state it up front.
 
-The project documents this clearly and has it on the backlog (PLAN Phase 11), which
-is the right call — but it must be **stated up front** in any availability
-positioning, not discovered later.
+Since this review, **native PITR shipped** (Phase 12): with a `clusters:` entry
+under `pitr.enabled`, physical base backups plus continuous WAL archiving recover a
+cluster to any instant in the retained window, closing the seconds-of-data-loss
+gap. The one remaining seam is that the long-lived `pg_receivewal` *streamer* isn't
+yet PgKeeper-supervised — for stream mode the operator runs `pg_receivewal` and
+PgKeeper ships the spool (the `archive_command` bridge needs nothing extra). Teams
+needing near-zero RPO can now use PgKeeper's own PITR rather than reaching for
+pgBackRest/Barman, though those remain fine alongside it.
 
 ---
 
@@ -139,7 +153,7 @@ positioning, not discovered later.
 
 | Fits well | Reconsider / needs more |
 |---|---|
-| SaaS & web apps, internal tools, SMB Postgres | Systems needing PITR / near-zero RPO |
+| SaaS & web apps, internal tools, SMB Postgres | Near-zero RPO via a *supervised* WAL streamer (PITR ships, but run `pg_receivewal` yourself for stream mode) |
 | Teams wanting *provable* restorability | Very large DBs (100s of GB+) until the pipeline streams |
 | Multi-cloud redundancy requirements | Fleet backup of many clusters from one host (backlogged) |
 | Compliance/audit evidence of backup health | |
@@ -171,7 +185,7 @@ positioning, not discovered later.
 | Simple workflow | Strong | Wizard + doctor + dashboard; one data path; thorough docs |
 | Redundancy | Excellent | Five interchangeable backends, independent per-destination status |
 | Assurance | Excellent | Verified restores, anomaly detection, dead-man's switch, metrics |
-| Availability | Bounded | Logical dumps only — RPO = last dump; no PITR (documented, backlogged) |
+| Availability | Good | Logical dumps (RPO = last dump) **plus native PITR** (Phase 12): base backups + WAL archiving recover a cluster to any instant; RPO seconds-to-minutes |
 
 _Bottom line: a well-engineered, honest, deployable backup tool whose standout
 strength is proving that backups actually restore. Position it on that strength,

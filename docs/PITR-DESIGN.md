@@ -242,7 +242,13 @@ first-class alert, not a silent stall.
 | **4** | `restore --to-time/--to-lsn/--to-name/latest`. | CI: base + WAL → restore to a timestamp → exact rows before target, none after. |
 | **5** | `verify --pitr`. | A base with a WAL gap **fails** verify; an intact chain passes. |
 | **6** | Observability: WAL lag + recovery window in status/dashboard/metrics/dead-man's. | Stopped streaming raises an alert within one threshold interval. |
-| **7** | Docs: `RESTORE.md` PITR runbook + `RPO-RTO.md` update. | A reader can execute a `--to-time` restore from the runbook alone. |
+| **7** ✅ | Docs: `RESTORE.md` PITR runbook + `RPO-RTO.md` update. | A reader can execute a `--to-time` restore from the runbook alone. |
+
+All seven stages have shipped. Stages 0–6 are code (parsed in the CHANGELOG under
+their PITR-Stage headings); Stage 7 is this documentation set. The one item left
+beyond the plan is a PgKeeper-supervised `pg_receivewal` streamer for `mode:
+stream` — until then, run `pg_receivewal` yourself and PgKeeper drains its spool
+(the `mode: archive` bridge needs nothing extra).
 
 Stages 1–2 are independently useful (physical base backups + archived WAL) even
 before restore automation lands, so value ships incrementally.

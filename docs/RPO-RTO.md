@@ -15,16 +15,21 @@ you can actually keep.
 
 ## The one thing to understand first
 
-PgKeeper takes **logical dumps** (`pg_dump` / `pg_dumpall`). It does **not** ship
-write-ahead logs (WAL) and does **not** do point-in-time recovery (PITR).
+PgKeeper has **two** recovery modes, and your RPO depends on which one you run:
 
-**Your recovery point is your last completed dump.** If you back up daily at 03:15
-and the database is lost at 15:00, you recover the 03:15 state and lose the writes
-in between.
+- **Logical dumps** (`pg_dump` / `pg_dumpall`) — the default. Portable,
+  cross-version, per-database. **Your recovery point is your last completed
+  dump:** back up daily at 03:15, lose the database at 15:00, and you recover the
+  03:15 state — the writes in between are gone. RPO = your backup interval.
+- **Point-in-time recovery (PITR)** — physical base backups plus continuous WAL
+  archiving, letting you recover a whole cluster to *any instant* in the retained
+  window. RPO shrinks to **seconds-to-minutes** (how fast WAL ships), not hours.
 
-That is a deliberate v1 boundary, not a bug. It keeps PgKeeper simple, portable,
-and dependency-light. If you need seconds-of-loss recovery, see
-[When you need better than this](#when-you-need-better-than-this).
+Most deployments want **both**: frequent, verifiable logical dumps as the
+portable line of defense, and PITR when a day — or an hour — of lost writes is
+unacceptable. The rest of this page covers each; pick per the loss your business
+can tolerate. PITR setup lives in [PITR-DESIGN.md](PITR-DESIGN.md); recovery
+steps in the [restore runbook](RESTORE.md#point-in-time-recovery-pitr).
 
 ---
 
@@ -52,6 +57,40 @@ interval you *chose* the interval you actually *get*:
   become your recovery point.
 
 ---
+
+## PITR: RPO in seconds, and a whole-cluster recovery point
+
+When the interval table above isn't tight enough, turn on PITR for the cluster
+(a `clusters:` entry with `pitr.enabled`). Now two things run continuously:
+periodic **base backups** (`pgkeeper basebackup`) and **WAL archiving** — every
+completed 16 MB segment shipped to storage as it fills.
+
+- **RPO = your WAL-shipping lag**, typically seconds to a couple of minutes, not
+  your base-backup interval. Stream WAL with `pg_receivewal` and a replication
+  slot (gap-free, near-real-time) and let PgKeeper drain the spool, or bridge the
+  server's `archive_command` through `pgkeeper wal archive-file` (RPO = one
+  segment's fill/timeout). Either way you recover to *any* instant in the window,
+  so the recovery point is a moment you choose — not the last snapshot.
+- **The recovery window** — how far back you can go — is *newest base → end of
+  archived WAL*, held open by `pitr.recovery_window` (retention refuses to prune
+  base or WAL below it).
+
+Three guardrails keep the PITR RPO you *chose* the one you actually *get*, all
+surfaced in `pgkeeper status`, the dashboard, and `pgkeeper metrics`:
+
+- **WAL lag** (`pgkeeper_wal_archive_lag_seconds`) — the age of the newest
+  archived segment. If shipping stalls, this climbs and your real RPO widens.
+- **Dead-man's switch** (`pgkeeper_wal_archive_stalled`) — set `pitr.max_lag`
+  (e.g. `15m`) and a stalled archiver flags the cluster red and trips the metric,
+  so "WAL shipping stopped" is an alert, not a restore-day discovery.
+- **Chain integrity** — `pgkeeper verify --pitr` confirms the archived WAL is an
+  unbroken run from the newest base, so a gap that would cap recovery is caught
+  ahead of time.
+
+RTO for PITR is base-fetch + WAL replay to the target; replay time grows with how
+much WAL accumulated since the chosen base, so a **more frequent base-backup
+cadence trades storage for a shorter replay** (and thus a shorter RTO). The full
+procedure is the [PITR runbook](RESTORE.md#point-in-time-recovery-pitr).
 
 ## Your RTO = fetch + restore + verify-first confidence
 
@@ -130,23 +169,23 @@ it.
 
 ---
 
-## When you need better than this
+## When you need better than the interval
 
 If your RPO must be **minutes or seconds** (financial ledgers, order systems, any
 system where a day — or an hour — of lost writes is unacceptable), logical dumps
-alone are not enough. Add continuous WAL archiving / PITR:
+alone are not enough — turn on PgKeeper's **native PITR** (Phase 12): base
+backups, continuous WAL archiving, and `restore --to-time/--to-lsn/--to-name`,
+with lag monitoring and chain verification built in. See
+[PITR: RPO in seconds](#pitr-rpo-in-seconds-and-a-whole-cluster-recovery-point)
+above and [PITR-DESIGN.md](PITR-DESIGN.md).
 
-- [`pg_receivewal`](https://www.postgresql.org/docs/current/app-pgreceivewal.html)
-  for streaming WAL, or
-- a PITR-capable tool such as
-  [pgBackRest](https://pgbackrest.org/) or
-  [Barman](https://pgbarman.org/).
-
-A common, robust pattern is **both**: PITR for a tight RPO, and PgKeeper for
-verifiable, portable, encrypted logical dumps fanned out to independent
-destinations as a second, provably-restorable line of defense. Native PITR — WAL
-archiving, base backups, and `restore --to-time` — is a dedicated phase on the
-PgKeeper roadmap (PLAN.md, Phase 12).
+The robust posture is **both modes together**: PITR for a tight, whole-cluster
+RPO, and logical dumps for verifiable, portable, encrypted, per-database
+restores fanned out to independent destinations — each covering the other's
+blind spot. If you already run a dedicated PITR appliance such as
+[pgBackRest](https://pgbackrest.org/) or [Barman](https://pgbarman.org/), keep
+it; PgKeeper's logical dumps still add a cross-version, off-site, provably-
+restorable second line.
 
 ---
 

@@ -7,6 +7,19 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **PITR Stage 7: point-in-time recovery runbook and RPO/RTO docs.** The final
+  PITR stage is documentation: [docs/RESTORE.md](docs/RESTORE.md) gains a complete,
+  standalone PITR runbook — how base backups and WAL get archived, confirming the
+  chain with `verify --pitr` and freshness with `status` *before* you rely on it,
+  choosing a recovery target (`--to-time`/`--to-lsn`/`--to-name`/`--to latest`),
+  staging the data directory, providing the cluster config, starting Postgres and
+  watching it reach the target, and a 3 a.m. checklist. [docs/RPO-RTO.md](docs/RPO-RTO.md)
+  is reworked around two recovery modes: logical dumps (RPO = interval) and PITR
+  (RPO = WAL-shipping lag, seconds-to-minutes), with the lag/dead-man's-switch/
+  chain-verification guardrails. README, USAGE, and ASSESSMENT are reconciled — the
+  old "no PITR" boundary is now "pick your RPO", with the one honest seam called
+  out (the supervised `pg_receivewal` streamer is still roadmap; run it yourself and
+  PgKeeper ships the spool). This completes Phase 12.
 - **PITR Stage 6: observability — WAL lag, recovery window, dead-man's switch.**
   PITR fails silently between restores: if WAL archiving stalls, or the reachable
   recovery window quietly shrinks below its promise, nothing says so until a

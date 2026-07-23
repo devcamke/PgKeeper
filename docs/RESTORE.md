@@ -103,39 +103,142 @@ automatically; for now apply them manually when moving to a new cluster.)
 
 ## Point-in-time recovery (PITR)
 
-Logical restore (above) brings back a database from a dump. **PITR** rebuilds a
-whole cluster from a physical base backup plus archived WAL, recovered to a
-moment you choose. Prerequisites: a `clusters:` entry with `pitr.enabled`, base
-backups (`pgkeeper basebackup`), and archived WAL (`pgkeeper wal`). Check
-readiness with `pgkeeper doctor`.
+Logical restore (above) brings back **one database** from a dump; its recovery
+point is that dump. **PITR** rebuilds a **whole cluster** from a physical base
+backup plus the archived write-ahead log (WAL), recovered to *any moment you
+choose* — the last-known-good instant before a bad migration, an errant
+`DELETE`, or a crash. This is the section to follow when the target is a
+timestamp, not a nightly snapshot.
 
-Stage a recovery-ready data directory:
+PITR is **cluster-scoped**, configured under a top-level `clusters:` entry (not
+the logical `databases:` list) with `pitr.enabled: true`. See
+[PITR-DESIGN.md](PITR-DESIGN.md) for the model and
+[../config/pgkeeper.example.yml](../config/pgkeeper.example.yml) for the config.
+
+### How the pieces get there (the ongoing half)
+
+A restore is only possible if two things have been running *before* the
+disaster. Neither is a recovery-day step — confirm they exist, don't start them
+now:
+
+- **Periodic base backups** — a physical snapshot of the cluster:
+  ```sh
+  pgkeeper basebackup --cluster main -c pgkeeper.yml
+  ```
+  Scheduled from `pitr.base_backup.schedule`; each lands on every destination,
+  compressed + encrypted, and is cataloged as `kind: base`.
+- **Continuous WAL archiving** — every completed 16 MB segment shipped to
+  storage, so recovery can replay past the base. Two supported paths:
+  ```sh
+  # (a) archive bridge: the server's archive_command hands PgKeeper one segment
+  #     archive_command = 'pgkeeper wal archive-file --cluster main %p %f'
+  # (b) spool drain: run pg_receivewal into a spool dir, PgKeeper ships completed
+  #     segments and deletes each once it is safely on every destination
+  pgkeeper wal archive --spool /var/spool/pgkeeper-wal --cluster main -c pgkeeper.yml
+  ```
+  (`pitr.mode` records intent; a PgKeeper-supervised `pg_receivewal` streamer is
+  on the roadmap — for now run it yourself and drain its spool.)
+
+The recovery horizon you can reach is *newest base → end of archived WAL*.
+
+### 1. Confirm you can actually recover — before you rely on it
+
+Two catalog-only checks, no scratch server needed. **Run these first.**
 
 ```sh
-pgkeeper restore --cluster main --data-dir /var/lib/postgresql/recovered \
-  --to-time "2026-07-23 14:55:00+00"        # or --to-lsn / --to-name / --to latest
-  # --restore-bin /usr/local/bin/pgkeeper   # absolute pgkeeper path for restore_command
+# Is the WAL an unbroken chain from the newest base forward? A single missing
+# segment caps how far a restore can replay — this finds it now, not at 3 a.m.
+pgkeeper verify --pitr --cluster main -c pgkeeper.yml
+
+# How fresh is the archived WAL, and how far back does the window actually reach?
+pgkeeper status -c pgkeeper.yml
+```
+
+`verify --pitr` fails loudly on a gap (naming the missing segment), on a base
+with no recorded start segment, or when no WAL is archived at or after the base.
+`status` prints, per cluster, the **WAL lag** (age of the newest segment) and
+the **recovery window** (oldest base → now) — if lag is high, archiving has
+stalled and your reachable target is older than you think. `pgkeeper doctor`
+covers the prerequisites (`wal_level`, `max_wal_senders`, the `REPLICATION`
+role, matched `pg_basebackup`/`pg_receivewal`).
+
+### 2. Choose the recovery target
+
+| Target flag | Recovers to | Use when |
+|---|---|---|
+| `--to-time "2026-07-23 14:55:00+00"` | just before that instant | you know *when* it went wrong |
+| `--to-lsn 0/1A2B3C48` | that write-ahead position | you have an exact LSN (e.g. from logs) |
+| `--to-name my_restore_point` | a named `pg_create_restore_point` | you tagged a safe point beforehand |
+| `--to latest` | the end of all archived WAL | you want maximum recovery (a total loss) |
+
+Pick the **last good moment**. For a bad 15:00 migration, target `14:59:59+00` —
+recovery stops *before* the target, so aim just ahead of the damage.
+
+### 3. Stage the recovery data directory
+
+Point `--data-dir` at an **empty** directory (PgKeeper refuses a non-empty one
+without `--force`, and never touches a running server):
+
+```sh
+pgkeeper restore --cluster main \
+  --data-dir /var/lib/postgresql/recovered \
+  --to-time "2026-07-23 14:55:00+00" \
+  --restore-bin /usr/local/bin/pgkeeper \
+  -c pgkeeper.yml
 ```
 
 This picks the newest base at or before the target, extracts it into the data
-directory, and writes the recovery config: a `restore_command` that fetches each
-WAL segment via `pgkeeper wal fetch` (reversing compression/encryption),
-`recovery_target_*`, and `recovery.signal`. Then **you** start Postgres — it
-replays WAL to the target and promotes:
+directory, and writes the recovery configuration:
+
+- `restore_command` — fetches each WAL segment via `pgkeeper wal fetch`,
+  reversing compression + encryption transparently to Postgres,
+- `recovery_target_time` (or `_lsn` / `_name`) and `recovery_target_action`
+  (`promote` by default; `--action pause` to inspect before committing), and
+- the `recovery.signal` file that puts the server into recovery on next start.
+
+### 4. Provide the cluster config, then start Postgres
+
+The base backup contains the **data**, but on Debian/Ubuntu the *config*
+(`postgresql.conf`, `pg_hba.conf`) lives under `/etc/postgresql/...`, outside the
+data directory — so it won't be in the backup. Put working copies in place, then
+start the server **as the `postgres` user**:
 
 ```sh
-pg_ctl -D /var/lib/postgresql/recovered start
+sudo -u postgres pg_ctl -D /var/lib/postgresql/recovered start
 ```
 
-Notes for the 3 a.m. reader:
+Postgres replays WAL through the `restore_command` until it reaches the target,
+then promotes (or pauses). Watch it get there:
 
-- **Config lives where your packaging puts it.** On Debian/Ubuntu,
-  `postgresql.conf`/`pg_hba.conf` are under `/etc/postgresql/...`, not the data
-  directory — so a base backup won't contain them. Provide them before starting
-  the recovered server.
-- **The `restore_command` runs as the `postgres` user**, so the `--restore-bin`
-  path, the config, and the WAL storage must all be reachable by it (and any
-  encryption passphrase present in its environment).
-- **Recovery target format:** `--to-time` takes a normal timestamp with an
-  offset (`2026-07-23 14:55:00+00`), which is what Postgres expects.
-- Restores are **CLI-only** — never a dashboard action.
+```sh
+tail -f /var/lib/postgresql/recovered/log/*.log
+# look for: "starting point-in-time recovery to ..."
+#           "consistent recovery state reached"
+#           "recovery stopping before ... <target>"
+#           "database system is ready to accept connections"
+```
+
+If recovery **pauses** (`--action pause`), inspect the data, then finish with
+`SELECT pg_wal_replay_resume();` to promote.
+
+### 5. Confirm, then re-baseline
+
+- Connect and verify the data is exactly as of your target — the bad change is
+  gone, everything before it is present.
+- Reset/rotate credentials if this cluster is going somewhere less trusted.
+- **Take a fresh base backup of the recovered cluster** once it's healthy: it is
+  on a new timeline, and your next recovery should start from it.
+
+### The 3 a.m. checklist
+
+- **`restore_command` runs as `postgres`.** The `--restore-bin` path, the config
+  file, the WAL storage, and any encryption passphrase in the environment must
+  all be reachable by that user — test `sudo -u postgres pgkeeper wal fetch ...`
+  for one segment if a restore stalls fetching WAL.
+- **`--to-time` format** is a plain timestamp with an offset
+  (`2026-07-23 14:55:00+00`) — what Postgres expects; ISO-8601 with a `T` is
+  rejected.
+- **Recovery stops *before* the target**, so aim just past the last good write.
+- **Provide `postgresql.conf`/`pg_hba.conf`** before starting if your packaging
+  keeps them outside the data directory.
+- **PITR restore is CLI-only** — never a dashboard action.
