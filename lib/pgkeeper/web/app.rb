@@ -120,6 +120,7 @@ module PgKeeper
         html render_view("overview", title: "Overview",
                                      databases: @dashboard.overview_rows,
                                      destinations: @dashboard.destination_rows,
+                                     pitr: @dashboard.pitr_rows,
                                      recent: @dashboard.recent_runs(limit: 10))
       end
 

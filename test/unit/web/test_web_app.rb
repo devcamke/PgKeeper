@@ -40,6 +40,31 @@ module PgKeeper
       post path, { "_csrf" => @app.csrf_token, "confirm" => "on" }.merge(params)
     end
 
+    # A dashboard config with one PITR cluster, plus a base + WAL seeded into the
+    # store so the overview's PITR panel and /api/status have data to render.
+    def pitr_app(pitr: "enabled: true, max_lag: 10m, recovery_window: 7d")
+      config = web_config(@dir, "clusters:\n  - name: pgc\n    host: h\n    pitr: { #{pitr} }\n")
+      seed_pitr_artifact("pgc/base/b1", kind: "base", at: Time.now.utc - 3600,
+                                        extra: { "start_segment" => "000000010000000000000005" })
+      seed_pitr_artifact("pgc/wal/000000010000000000000005", kind: "wal", at: Time.now.utc - 120,
+                                                             extra: { "segment" => "000000010000000000000005" })
+      Web::App.new(config, logger: null_logger, actions: @actions)
+    end
+
+    def seed_pitr_artifact(remote, kind:, at:, extra: {})
+      adapter = Storage::Local.new(root: File.join(@dir, "backups"), logger: null_logger)
+      Dir.mktmpdir do |dir|
+        art = File.join(dir, "a")
+        File.binwrite(art, "x")
+        adapter.upload(art, remote)
+        manifest = { "database" => "pgc", "kind" => kind, "started_at" => at.iso8601,
+                     "size_bytes" => 1, "checksum" => { "value" => "x" } }.merge(extra)
+        meta = File.join(dir, "m.json")
+        File.write(meta, JSON.generate(manifest))
+        adapter.upload(meta, "#{remote}#{Manifest::SUFFIX}")
+      end
+    end
+
     def test_overview_shows_traffic_lights_history_and_destinations
       seed_backups
       seed_history(@config)
@@ -55,6 +80,42 @@ module PgKeeper
       assert_includes body, "never run", "database with no history is called out"
       assert_includes body, "local:", "destination grid names the destination"
       assert_includes body, "20260721T031500Z-42", "recent runs link to the run"
+    end
+
+    def test_overview_shows_pitr_panel_when_a_cluster_runs_pitr
+      # Drive the PITR-configured app directly (setup's @app has no clusters).
+      response = Rack::MockRequest.new(pitr_app).get("/")
+
+      assert_equal 200, response.status
+      body = response.body
+
+      assert_includes body, "PITR clusters"
+      assert_includes body, "pgc", "the cluster is named in the panel"
+      assert_includes body, "WAL lag"
+      assert_includes body, "Recovery window"
+    end
+
+    def test_overview_has_no_pitr_panel_without_clusters
+      seed_history(@config)
+
+      get "/"
+
+      refute_includes last_response.body, "PITR clusters"
+    end
+
+    def test_api_status_includes_pitr_clusters
+      app = pitr_app(pitr: "enabled: true, max_lag: 10m, recovery_window: 30m")
+      response = Rack::MockRequest.new(app).get("/api/status")
+
+      payload = JSON.parse(response.body)
+      cluster = payload.fetch("pitr_clusters").first
+
+      assert_equal "pgc", cluster["cluster"]
+      assert_equal "green", cluster["light"]
+      assert_equal 1, cluster["base_count"]
+      assert_equal 1, cluster["wal_count"]
+      assert_operator cluster["lag_seconds"], :>=, 0
+      refute cluster["stalled"]
     end
 
     def test_runs_page_lists_and_filters_by_database

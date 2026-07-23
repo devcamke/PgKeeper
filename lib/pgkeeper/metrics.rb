@@ -30,6 +30,20 @@ module PgKeeper
 
     module_function
 
+    # PITR series (Phase 12, Stage 6): the WAL-archiving and recovery-window
+    # facts a scrape alarms on — "WAL shipping stopped", "recovery window shrank
+    # below its promise" — labelled by cluster, computed by {PITR::Health}.
+    PITR_SERIES = [
+      Metric.new("pgkeeper_wal_archive_lag_seconds",
+                 "Age of the newest archived WAL segment for a PITR cluster.", "gauge"),
+      Metric.new("pgkeeper_wal_archive_stalled",
+                 "Whether WAL archiving lag has crossed the cluster's max_lag threshold (1) or not (0).", "gauge"),
+      Metric.new("pgkeeper_recovery_window_seconds",
+                 "Reachable recovery span (now minus the oldest base backup) for a PITR cluster.", "gauge"),
+      Metric.new("pgkeeper_last_base_backup_timestamp_seconds",
+                 "Unix time of the newest base backup for a PITR cluster.", "gauge")
+    ].freeze
+
     # Return the full exposition text for +config+.
     def render(config, logger: PgKeeper.logger)
       history = History.new(File.join(config.workdir, "history.sqlite3"), logger: logger)
@@ -39,6 +53,7 @@ module PgKeeper
       out = []
       out.concat(up_metric)
       SERIES.each { |m| out.concat(series(m, config, last, success)) }
+      out.concat(pitr_series(config, logger)) if config.pitr_clusters.any?
       "#{out.join("\n")}\n"
     end
 
@@ -89,6 +104,38 @@ module PgKeeper
 
     def value_for(name, last_row, success_row)
       VALUE_FNS.fetch(name).call(last_row, success_row)
+    end
+
+    # -- PITR (per-cluster) ------------------------------------------------
+
+    def pitr_series(config, logger)
+      snapshots = PITR::Health.new(config, logger: logger).snapshots
+      PITR_SERIES.flat_map { |metric| pitr_metric(metric, snapshots) }
+    end
+
+    def pitr_metric(metric, snapshots)
+      lines = ["# HELP #{metric.name} #{metric.help}", "# TYPE #{metric.name} #{metric.type}"]
+      snapshots.each do |snap|
+        value = pitr_value(metric.name, snap)
+        next if value.nil?
+
+        lines << %(#{metric.name}{cluster="#{escape_label(snap.cluster)}"} #{value})
+      end
+      lines
+    end
+
+    # value(snapshot) -> number or nil (nil = omit the series for this cluster).
+    PITR_VALUE_FNS = {
+      "pgkeeper_wal_archive_lag_seconds" => lambda(&:lag_seconds),
+      # Only emit the dead-man's switch where a threshold arms it — otherwise
+      # there is no line to alarm on, rather than a misleading constant 0.
+      "pgkeeper_wal_archive_stalled" => ->(s) { (s.stalled? ? 1 : 0) if s.monitored? },
+      "pgkeeper_recovery_window_seconds" => lambda(&:recovery_window_seconds),
+      "pgkeeper_last_base_backup_timestamp_seconds" => ->(s) { s.last_base_at&.to_i }
+    }.freeze
+
+    def pitr_value(name, snapshot)
+      PITR_VALUE_FNS.fetch(name).call(snapshot)
     end
 
     def unix(iso)

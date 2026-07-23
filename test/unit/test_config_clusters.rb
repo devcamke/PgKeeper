@@ -98,6 +98,21 @@ module PgKeeper
       assert(err.problems.any? { |p| p.include?("recovery_window") })
     end
 
+    def test_parses_and_validates_max_lag
+      cluster = base("clusters:\n  - name: c\n    pitr: { enabled: true, max_lag: 15m }").cluster("c")
+
+      assert_equal 15 * 60, cluster.pitr.max_lag_seconds
+
+      # Unset means the dead-man's switch is simply not armed.
+      idle = base("clusters:\n  - name: c\n    pitr: { enabled: true }").cluster("c")
+
+      assert_nil idle.pitr.max_lag_seconds
+
+      err = assert_raises(ConfigError) { base("clusters:\n  - name: c\n    pitr: { max_lag: whenever }") }
+
+      assert(err.problems.any? { |p| p.include?("max_lag") })
+    end
+
     def test_rejects_unknown_keys_at_every_level
       err = assert_raises(ConfigError) { base("clusters:\n  - name: c\n    bogus: 1") }
 

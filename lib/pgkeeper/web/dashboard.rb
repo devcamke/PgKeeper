@@ -57,6 +57,15 @@ module PgKeeper
         @config.storage.map { |target| destination_row(target) }
       end
 
+      # PITR recovery-readiness snapshots, one per PITR-enabled cluster. Empty
+      # when no cluster runs PITR, so the overview simply omits the panel.
+      def pitr_rows
+        PITR::Health.new(@config, logger: @logger).snapshots
+      rescue EnvironmentError, StorageError => e
+        @logger.error("pitr health failed", error: e.message, error_class: e.class.name)
+        []
+      end
+
       def recent_runs(database: nil, limit: 50)
         history.recent(limit: limit, database: database)
       end
@@ -144,7 +153,8 @@ module PgKeeper
         {
           "generated_at" => Time.now.utc.iso8601,
           "databases" => overview_rows.map { |row| api_database(row) },
-          "destinations" => destination_rows.map { |d| api_destination(d) }
+          "destinations" => destination_rows.map { |d| api_destination(d) },
+          "pitr_clusters" => pitr_rows.map { |snap| api_cluster(snap) }
         }
       end
 
@@ -170,6 +180,18 @@ module PgKeeper
           "next_run_at" => row.next_run_at&.iso8601,
           "last_verified_at" => row.last_verified_at&.iso8601,
           "verified_tier" => row.verified_tier
+        }
+      end
+
+      def api_cluster(snap)
+        {
+          "cluster" => snap.cluster, "light" => snap.light,
+          "last_base_at" => snap.last_base_at&.iso8601, "last_wal_at" => snap.last_wal_at&.iso8601,
+          "last_wal_segment" => snap.last_wal_segment, "base_count" => snap.base_count,
+          "wal_count" => snap.wal_count, "lag_seconds" => snap.lag_seconds,
+          "max_lag_seconds" => snap.max_lag_seconds, "stalled" => snap.stalled?,
+          "recovery_window_seconds" => snap.recovery_window_seconds,
+          "promised_window_seconds" => snap.promised_window_seconds, "window_short" => snap.window_short?
         }
       end
 
