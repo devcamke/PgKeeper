@@ -265,6 +265,9 @@ mise exec -- ruby -Ilib bin/pgkeeper backup  -c pgkeeper.yml
 mise exec -- ruby -Ilib bin/pgkeeper list    -c pgkeeper.yml
 ```
 
+New here? [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) walks the onboarding wizard
+and scheduling end to end, with real output.
+
 Config is a single declarative YAML file with ERB interpolation for secrets, so
 passwords stay in the environment and out of git:
 
@@ -301,6 +304,9 @@ docker compose up -d
 
 ## Documentation
 
+- [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) — **a guided first run**: the
+  `pgkeeper connect` onboarding wizard and scheduling your jobs, end to end,
+  with real output.
 - [docs/USAGE.md](docs/USAGE.md) — **the full usage guide**: install, configure,
   every command, scheduling, dashboard, Docker, library use, troubleshooting.
 - [docs/SCHEDULING.md](docs/SCHEDULING.md) — scheduling automated jobs (backup, verify,

@@ -5,6 +5,15 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ## Unreleased
 
+### Documentation
+
+- **Guided first-run walkthrough (`docs/WALKTHROUGH.md`).** A single narrative
+  that strings the first steps together — the `pgkeeper connect` onboarding
+  wizard (with a real annotated transcript and the config it writes), the
+  first backup + deep verify, and scheduling the backup/verify/prune jobs via
+  cron, systemd timers, or the built-in daemon (all with real command output).
+  Linked from the README's Getting started and Documentation sections.
+
 ### Added
 
 - **Download a whole backup set as one zip (dashboard).** The Backups page
