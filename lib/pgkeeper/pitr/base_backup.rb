@@ -3,6 +3,7 @@
 require "fileutils"
 require "tmpdir"
 require "time"
+require "json"
 
 module PgKeeper
   module PITR
@@ -99,12 +100,13 @@ module PgKeeper
       def capture_and_store(cluster, staging, timestamp, began_at, log)
         datadir = File.join(staging, "base")
         run_pg_basebackup(cluster, datadir, timestamp, log)
+        start = start_position(datadir)
 
         bundle = File.join(staging, "#{cluster.slug}-base-#{timestamp}.zip")
         Compress::Zip.new.compress_tree(datadir, bundle)
         final, encryption = maybe_encrypt(bundle, log)
 
-        manifest = Manifest.for_artifact(final, base_manifest_attrs(cluster, encryption, began_at))
+        manifest = Manifest.for_artifact(final, base_manifest_attrs(cluster, encryption, began_at, start))
         manifest.write(Manifest.path_for(final))
 
         destinations = distribute(cluster, final, log)
@@ -115,13 +117,29 @@ module PgKeeper
         }
       end
 
-      def base_manifest_attrs(cluster, encryption, began_at)
+      def base_manifest_attrs(cluster, encryption, began_at, start)
         {
           "kind" => "base", "database" => cluster.name, "dump_format" => "basebackup",
           "compression" => "zip", "encryption" => encryption,
           "started_at" => began_at.iso8601, "finished_at" => @clock.now.utc.iso8601,
-          "server_version" => server_version(cluster), "timeline" => timeline(cluster)
+          "server_version" => server_version(cluster), "timeline" => start[:timeline],
+          "start_lsn" => start[:lsn], "start_segment" => start[:segment]
         }
+      end
+
+      # The WAL position the base's recovery begins at — the anchor coupled
+      # retention keeps WAL from. Read from the +backup_manifest+ pg_basebackup
+      # writes (its WAL-Ranges), so no separate query is needed. Best-effort: a
+      # base without it simply won't drive WAL pruning.
+      def start_position(datadir)
+        data = JSON.parse(File.read(File.join(datadir, "backup_manifest")))
+        range = Array(data["WAL-Ranges"]).first || {}
+        lsn = range["Start-LSN"]
+        timeline = range["Timeline"]
+        { lsn: lsn, timeline: timeline, segment: Wal.lsn_to_segment(lsn, timeline) }
+      rescue StandardError => e
+        @logger.warn("could not read base start position (WAL pruning disabled for this base)", error: e.message)
+        {}
       end
 
       def run_pg_basebackup(cluster, datadir, timestamp, log)

@@ -1,0 +1,21 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+module PgKeeper
+  class TestPitrWal < Minitest::Test
+    include TestHelpers
+
+    def test_maps_an_lsn_to_its_segment_name
+      # 16 MiB segments: LSN 0/8000028 on timeline 1 lives in segment ...0008.
+      assert_equal "000000010000000000000008", PITR::Wal.lsn_to_segment("0/8000028", 1)
+      assert_equal "000000020000000100000002", PITR::Wal.lsn_to_segment("1/2000000", 2)
+    end
+
+    def test_returns_nil_for_missing_or_malformed_input
+      assert_nil PITR::Wal.lsn_to_segment(nil, 1)
+      assert_nil PITR::Wal.lsn_to_segment("0/8000028", nil)
+      assert_nil PITR::Wal.lsn_to_segment("not-an-lsn", 1)
+    end
+  end
+end

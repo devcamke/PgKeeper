@@ -18,6 +18,9 @@ module PgKeeper
       :database, :kind, :timestamp, :remote_path, :manifest_path,
       :size_bytes, :checksum, :compression, :encryption, :dump_format,
       :verified_at, :verified_tier,
+      # PITR (Phase 12): a base backup records the WAL segment its recovery
+      # begins at; a WAL artifact records its own segment name.
+      :start_segment, :segment,
       keyword_init: true
     )
 
@@ -85,7 +88,8 @@ module PgKeeper
         size_bytes: data["size_bytes"], checksum: data.dig("checksum", "value"),
         compression: data["compression"], encryption: data["encryption"],
         dump_format: data["dump_format"],
-        verified_at: parse_time(data["verified_at"]), verified_tier: data["verified_tier"]
+        verified_at: parse_time(data["verified_at"]), verified_tier: data["verified_tier"],
+        start_segment: data["start_segment"], segment: data["segment"]
       )
     end
 

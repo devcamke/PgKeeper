@@ -7,6 +7,18 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **PITR Stage 3: coupled base + WAL retention.** A base backup and the WAL
+  needed to recover *from* it are one unit; `pgkeeper prune` now treats them that
+  way. Base and WAL artifacts are kept out of the logical-dump GFS policy and
+  pruned by a recovery-window rule instead: keep the newest base at or before
+  `now - recovery_window` (the *anchor*) plus every newer base, and keep all WAL
+  from the anchor's start segment forward — so pruning can never strand a base or
+  break a recovery chain, and never shrinks the reachable horizon below the
+  window. Base backups now record their start LSN/segment (read from
+  `pg_basebackup`'s `backup_manifest`) so retention knows the floor; with no
+  window, no base old enough to reach it, or a base missing its start segment,
+  nothing is pruned (fail toward keeping the chain). The core is a pure,
+  property-tested planner.
 - **PITR Stage 2: WAL archiving (`pgkeeper wal`).** The continuous half of PITR —
   ship completed WAL segments to storage and fetch them back for restore. Each
   segment rides the same conveyor as dumps and base backups (compress → encrypt →
