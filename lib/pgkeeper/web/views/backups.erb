@@ -10,7 +10,7 @@
   <tr><th>Database</th><th>Backup</th><th>Kind</th><th>Size</th><th>Pipeline</th>
       <th>Verified</th><th>Download</th></tr>
   <%- sets.each do |set| -%>
-  <%- set.artifacts.each do |artifact| -%>
+  <%- set.artifacts.each_with_index do |artifact, i| -%>
   <tr>
     <td><%= h(set.database) %></td>
     <td class="mono"><%= h(set.label) %></td>
@@ -28,6 +28,9 @@
     <td>
       <a href="/download?destination=<%= u(name) %>&amp;path=<%= u(artifact.remote_path) %>">artifact</a>
       · <a href="/download?destination=<%= u(name) %>&amp;path=<%= u(artifact.manifest_path) %>">manifest</a>
+      <%- if i.zero? -%>
+      · <a href="/download-set?destination=<%= u(name) %>&amp;database=<%= u(set.database) %>&amp;timestamp=<%= u(set.label) %>">all&nbsp;(zip)</a>
+      <%- end -%>
     </td>
   </tr>
   <%- end -%>

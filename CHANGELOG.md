@@ -7,6 +7,15 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **Download a whole backup set as one zip (dashboard).** The Backups page
+  listed a dump and its manifest as two separate links, so grabbing a complete
+  backup meant several clicks per artifact — and more when a run also captured
+  cluster globals. Each set now offers an **all (zip)** link that bundles every
+  file in the set — each dump plus its manifest — into a single
+  `<database>-<label>.zip`. A new `GET /download-set` endpoint resolves the set
+  against the catalog (the same allowlisting as `/download`, so it can't be
+  steered at arbitrary paths), streams each file into the archive, and deletes
+  the temporary sources as it goes. Restores stay CLI-only.
 - **Scheduled verification & pruning (`maintenance:`).** The scheduler used to
   automate only the backup; verify and prune had to be hand-wired into cron even
   though the tool's whole premise is *a backup you haven't restored isn't a
