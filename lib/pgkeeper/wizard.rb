@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "open3"
+require "securerandom"
 
 require "pgkeeper/prompt"
 require "pgkeeper/config_writer"
@@ -27,7 +28,11 @@ module PgKeeper
     end
 
     # What the wizard did, returned from {#run} for the CLI to report on.
-    Result = Struct.new(:config_path, :created, :database, :schedule, :password_env, keyword_init: true)
+    Result = Struct.new(:config_path, :created, :database, :schedule, :password_env,
+                        :web_token_env, :web_token, keyword_init: true)
+
+    # Env var the generated `web:` block reads its dashboard token from.
+    WEB_TOKEN_ENV = "PGKEEPER_WEB_TOKEN"
 
     def initialize(config_path:, prompt: Prompt.new, logger: PgKeeper.logger, prober: nil)
       @config_path = config_path
@@ -44,7 +49,8 @@ module PgKeeper
       db = collect_database(existing)
       test_connection(db)
       schedule = collect_schedule
-      persist(existing, db, schedule)
+      web = collect_web(existing)
+      persist(existing, db, schedule, web)
     end
 
     private
@@ -177,6 +183,23 @@ module PgKeeper
       nil
     end
 
+    # -- step 3b: web dashboard --------------------------------------------
+
+    # Offer to set up the `pgkeeper web` dashboard. Returns the web settings, or
+    # nil to leave it unconfigured. Skipped silently when the existing config
+    # already has a `web:` block — there is nothing to add, and we must never
+    # clobber a hand-tuned one.
+    def collect_web(existing)
+      return nil if existing&.raw&.key?("web")
+
+      @prompt.heading("Web dashboard")
+      @prompt.say("`pgkeeper web` serves a monitoring dashboard and can trigger backups.")
+      @prompt.say("Auth is required; the token is read from the environment, never inlined.")
+      return nil unless @prompt.yes?("Enable the web dashboard?", default: true)
+
+      { "bind" => "127.0.0.1", "port" => ask_port(8321), "token_env" => WEB_TOKEN_ENV }
+    end
+
     def preview_schedule(schedule)
       @prompt.say("  normalized cron: #{schedule.to_cron}")
       from = Time.now
@@ -189,7 +212,7 @@ module PgKeeper
 
     # -- step 4: persist ----------------------------------------------------
 
-    def persist(existing, db, schedule)
+    def persist(existing, db, schedule, web)
       entry = build_entry(db)
       # Preview reflects what actually lands: on an existing config the schedule
       # rides on the database entry; on a fresh config it becomes global.
@@ -197,6 +220,7 @@ module PgKeeper
       snippet = ConfigWriter.render_database(preview)
       @prompt.heading("Review")
       @prompt.say(snippet)
+      @prompt.say("  + web dashboard on #{web['bind']}:#{web['port']}") if web
 
       target = existing ? "append this database to #{@config_path}" : "create #{@config_path}"
       unless @prompt.yes?("Write config (#{target})?", default: true)
@@ -204,13 +228,15 @@ module PgKeeper
         return nil
       end
 
-      write_config(existing, entry, schedule)
+      write_config(existing, entry, schedule, web)
       result = Result.new(
         config_path: @config_path,
         created: existing.nil?,
         database: entry["name"],
         schedule: schedule,
-        password_env: entry["password_env"]
+        password_env: entry["password_env"],
+        web_token_env: web && web["token_env"],
+        web_token: web && SecureRandom.hex(24)
       )
       guidance(result)
       result
@@ -232,14 +258,17 @@ module PgKeeper
       entry
     end
 
-    def write_config(existing, entry, schedule)
+    def write_config(existing, entry, schedule, web)
       if existing
         entry_with_schedule = entry.merge("schedule" => schedule)
         text = File.read(@config_path, encoding: "UTF-8")
         updated = append_or_snippet(text, entry_with_schedule)
+        # `web` is non-nil here only when the existing config had no `web:` block
+        # (collect_web checks), so appending one can't duplicate an existing key.
+        updated = ConfigWriter.append_web(updated, web) if web
         ConfigWriter.write(@config_path, updated)
       else
-        ConfigWriter.write(@config_path, fresh_config(entry, schedule))
+        ConfigWriter.write(@config_path, fresh_config(entry, schedule, web))
       end
       @logger.info("wizard wrote config", path: @config_path, database: entry["name"])
     end
@@ -252,13 +281,14 @@ module PgKeeper
       "#{text.chomp}\n\ndatabases:\n#{ConfigWriter.render_database(entry_with_schedule)}"
     end
 
-    def fresh_config(entry, schedule)
+    def fresh_config(entry, schedule, web)
       workdir = Config::DEFAULT_WORKDIR
       ConfigWriter.render_config(
         workdir: workdir,
         schedule: schedule,
         database: entry,
-        backup_path: File.join(workdir, "backups")
+        backup_path: File.join(workdir, "backups"),
+        web: web
       )
     end
 
@@ -267,6 +297,11 @@ module PgKeeper
       if result.password_env
         @prompt.heading("Set the database password (kept out of the config file)")
         @prompt.say(%(  export #{result.password_env}='…'))
+      end
+      if result.web_token_env
+        @prompt.heading("Set the dashboard token (kept out of the config file)")
+        @prompt.say(%(  export #{result.web_token_env}='#{result.web_token}'))
+        @prompt.say("  Then start it:  pgkeeper web")
       end
       @prompt.heading("Next steps")
       @prompt.say("  1. Verify:   pgkeeper validate  &&  pgkeeper doctor")
