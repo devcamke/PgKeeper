@@ -14,8 +14,9 @@ module PgKeeper
   # A backup is kept if *any* rule selects it (the union). On top of the policy,
   # hard safety rails always apply: the most recent backup is never deleted, a
   # policy can never prune everything to zero, and — when a verified backup
-  # exists — nothing newer than it is deleted (don't discard your safety margin
-  # of not-yet-verified recent backups).
+  # exists — the last verified backup and anything newer than it are never
+  # deleted (keep the newest proven-restorable backup plus the safety margin of
+  # not-yet-verified backups taken since).
   #
   # {#partition} operates on any objects that respond to +#timestamp+ (a Time);
   # callers pass backup sets and get back which to keep and which to delete.
@@ -56,9 +57,10 @@ module PgKeeper
         !@keep_last.nil? || @periods.any? { |p| !p.keep.nil? && p.keep.positive? }
       end
 
-      # Split +sets+ into keep/delete. +protected_after+ (a Time) force-keeps any
-      # set newer than it — used to protect backups newer than the last verified
-      # one.
+      # Split +sets+ into keep/delete. +protected_after+ (the Time of the last
+      # verified backup) force-keeps that backup and everything newer — so the
+      # most recent proven-restorable backup is never pruned, nor is the margin
+      # of not-yet-verified backups taken since.
       def partition(sets, protected_after: nil)
         return Plan.new(keep: sets.dup, delete: []) unless configured? && !sets.empty?
 
@@ -69,7 +71,7 @@ module PgKeeper
         keep.merge(descending.first(@keep_last)) if @keep_last
         @periods.each { |period| keep.merge(select_period(descending, period)) }
         keep << by_time.last # rail: never delete the most recent backup
-        keep.merge(by_time.select { |s| protected_after && s.timestamp > protected_after })
+        keep.merge(by_time.select { |s| protected_after && s.timestamp >= protected_after })
 
         Plan.new(
           keep: by_time.select { |s| keep.include?(s) },

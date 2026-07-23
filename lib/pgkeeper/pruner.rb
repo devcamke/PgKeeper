@@ -7,9 +7,9 @@ module PgKeeper
   #
   # Retention is enforced independently per destination (you might keep 7 days
   # locally but 30 in the cloud) and per database. The policy's safety rails
-  # (never delete the newest backup, never prune to zero, never delete anything
-  # newer than the last verified backup) are applied here via the catalog's
-  # verification state.
+  # (never delete the newest backup, never prune to zero, never delete the last
+  # verified backup or anything newer than it) are applied here via the
+  # catalog's verification state.
   class Pruner
     # One backup set slated for deletion (or deleted, when applied).
     Deletion = Struct.new(:destination, :database, :label, :size_bytes, :objects, keyword_init: true)

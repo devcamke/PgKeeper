@@ -112,7 +112,7 @@ tool if you need minutes-or-seconds RPO.
 - **`pgkeeper prune`** — enforces the retention policy (`keep_last` and/or GFS
   daily/weekly/monthly/yearly), per destination and per database. Dry-run by default;
   `--apply` to delete. Safety rails: never deletes the newest backup, never prunes to
-  zero, never deletes anything newer than the last verified backup.
+  zero, never deletes the last verified backup or anything newer than it.
 - **`pgkeeper verify [--deep]`** — Tier 1 re-checksums the artifact, Tier 2 proves it's a
   readable archive (`pg_restore --list` / non-empty SQL), and `--deep` restores it into a
   throwaway scratch database. Passing marks the backup verified.
