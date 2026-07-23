@@ -303,6 +303,8 @@ docker compose up -d
 
 - [docs/USAGE.md](docs/USAGE.md) — **the full usage guide**: install, configure,
   every command, scheduling, dashboard, Docker, library use, troubleshooting.
+- [docs/SCHEDULING.md](docs/SCHEDULING.md) — scheduling automated jobs (backup, verify,
+  prune) via cron, systemd timers, or the built-in daemon, with the generated output.
 - [docs/RPO-RTO.md](docs/RPO-RTO.md) — data-loss/recovery-time expectations and how
   to set an SLA you can keep.
 - [docs/ASSESSMENT.md](docs/ASSESSMENT.md) — engineering review of the backup
