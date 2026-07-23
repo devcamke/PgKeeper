@@ -29,7 +29,10 @@ module PgKeeper
       @checks = []
       check_tools
       config = check_config
-      check_databases(config) if config
+      if config
+        check_databases(config)
+        check_clusters(config)
+      end
       @checks
     end
 
@@ -60,7 +63,9 @@ module PgKeeper
       end
 
       config = Config.load(@config_path)
-      add("config", :ok, "#{@config_path} (#{config.databases.length} database(s))")
+      clusters = config.pitr_clusters.length
+      suffix = clusters.positive? ? ", #{clusters} PITR cluster(s)" : ""
+      add("config", :ok, "#{@config_path} (#{config.databases.length} database(s)#{suffix})")
       config
     rescue ConfigError => e
       detail = ([e.message] + e.problems.map { |p| "  - #{p}" }).join("\n")
@@ -115,6 +120,89 @@ module PgKeeper
 
     def server_version(db)
       out, status = Open3.capture2e(db.libpq_env, "psql", "-XtAc", "SHOW server_version")
+      status.success? ? out.strip : nil
+    end
+
+    # -- PITR prerequisites (Phase 12, Stage 0) ----------------------------
+    #
+    # For each PITR-enabled cluster, verify the host can actually do PITR before
+    # a base backup / WAL stream is ever attempted: the physical tools are
+    # present and version-matched, the server is reachable, `wal_level` is high
+    # enough, and (streaming) there's replication capacity.
+    def check_clusters(config)
+      config.pitr_clusters.each { |cluster| check_cluster(cluster) }
+    end
+
+    def check_cluster(cluster)
+      check_pitr_tools(cluster)
+      return unless check_cluster_connectivity(cluster)
+
+      check_wal_level(cluster)
+      return unless cluster.pitr.mode == "stream"
+
+      check_max_wal_senders(cluster)
+      check_replication_role(cluster)
+    end
+
+    def check_pitr_tools(cluster)
+      tools = ["pg_basebackup"]
+      tools << "pg_receivewal" if cluster.pitr.mode == "stream"
+      tools.each do |tool|
+        version = Dump::Runner.tool_version(tool)
+        add("pitr:#{cluster.name}:#{tool}", version ? :ok : :fail, version || "not found on PATH")
+      end
+    end
+
+    def check_cluster_connectivity(cluster)
+      out, status = Open3.capture2e(cluster.libpq_env, "psql", "-XtAc", "SELECT version()")
+      if status.success?
+        add("pitr:#{cluster.name}", :ok, out.strip.split(" on ").first)
+        true
+      else
+        add("pitr:#{cluster.name}", :fail, "connection failed: #{out.strip.lines.last&.strip}")
+        false
+      end
+    rescue Errno::ENOENT
+      add("pitr:#{cluster.name}", :fail, "psql not found on PATH")
+      false
+    end
+
+    def check_wal_level(cluster)
+      level = cluster_show(cluster, "wal_level")
+      if %w[replica logical].include?(level)
+        add("pitr:#{cluster.name}:wal_level", :ok, level)
+      else
+        add("pitr:#{cluster.name}:wal_level", :fail,
+            "wal_level is #{level.inspect}; PITR needs at least `replica`")
+      end
+    end
+
+    def check_max_wal_senders(cluster)
+      value = cluster_show(cluster, "max_wal_senders").to_i
+      if value >= 1
+        add("pitr:#{cluster.name}:max_wal_senders", :ok, value.to_s)
+      else
+        add("pitr:#{cluster.name}:max_wal_senders", :warn,
+            "max_wal_senders is #{value}; streaming needs at least 1")
+      end
+    end
+
+    def check_replication_role(cluster)
+      answer = cluster_query(cluster, "SELECT (rolreplication OR rolsuper) FROM pg_roles WHERE rolname = current_user")
+      if answer == "t"
+        add("pitr:#{cluster.name}:replication", :ok, "role can stream WAL")
+      else
+        add("pitr:#{cluster.name}:replication", :warn,
+            "connecting role lacks REPLICATION; grant it for streaming mode")
+      end
+    end
+
+    def cluster_show(cluster, setting)
+      cluster_query(cluster, "SHOW #{setting}")
+    end
+
+    def cluster_query(cluster, sql)
+      out, status = Open3.capture2e(cluster.libpq_env, "psql", "-XtAc", sql)
       status.success? ? out.strip : nil
     end
 
