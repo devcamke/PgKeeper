@@ -29,7 +29,7 @@ module PgKeeper
                                      keyword_init: true)
 
       # One scheduled job (backup / verify / prune) as the Schedule page shows it.
-      ScheduleRow = Struct.new(:action, :flags, :scope, :cadence, :cron, :next_runs, keyword_init: true)
+      ScheduleRow = Struct.new(:action, :flags, :only, :scope, :cadence, :cron, :next_runs, keyword_init: true)
 
       def initialize(config, logger: PgKeeper.logger)
         @config = config
@@ -91,6 +91,7 @@ module PgKeeper
           ScheduleRow.new(
             action: entry.action.to_s,
             flags: entry.flags,
+            only: entry.only,
             scope: entry.only ? "only #{entry.only.join(', ')}" : "all databases",
             cadence: entry.schedule.expression,
             cron: entry.schedule.to_cron,
