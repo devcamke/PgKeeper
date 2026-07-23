@@ -7,6 +7,12 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **"Run backup now" button on the dashboard's Runs page.** The Runs timeline
+  was read-only; kicking off a backup meant switching to the Actions tab. It now
+  carries a Run backup button next to the filter, wired through the same
+  CSRF- and lock-guarded `/actions/backup` endpoint (and the shared confirm
+  guard, now hoisted into the layout so the Schedule and Runs pages share one
+  copy).
 - **`pgkeeper connect` now sets up the web dashboard too.** The onboarding
   wizard used to write the database and schedule but never a `web:` block, so
   `pgkeeper web` failed with "auth is not configured" until you hand-edited the

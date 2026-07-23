@@ -73,6 +73,18 @@ module PgKeeper
       refute_includes last_response.body, "r-analytics"
     end
 
+    def test_runs_page_has_a_csrf_guarded_run_backup_button
+      get "/runs"
+
+      assert_equal 200, last_response.status
+      body = last_response.body
+
+      assert_includes body, %(action="/actions/backup"), "the Runs page can trigger a backup"
+      assert_includes body, "Run backup now"
+      assert_includes body, %(name="_csrf"), "the run button is CSRF-guarded"
+      assert_includes body, "pgkConfirm", "the shared confirm handler is present (from the layout)"
+    end
+
     def test_run_detail_shows_error_and_unknown_run_404s
       seed_history(@config, run_id: "r-bad", status: :failure, error: "pg_dump exploded")
 

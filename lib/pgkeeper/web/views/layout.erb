@@ -196,6 +196,8 @@
   button svg, .btn svg { width: 1rem; height: 1rem; }
   .run-now { display: inline; margin: 0; }
   .btn-run { padding: 0.3rem 0.75rem; font-size: 0.8rem; border-radius: 6px; }
+  .toolbar { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+  .toolbar form { margin: 0; }
 
   select, input[type="text"] {
     padding: 0.35rem 0.55rem; border-radius: 7px; border: 1px solid var(--border-strong);
@@ -312,5 +314,19 @@
 <main>
 <%= @content %>
 </main>
+<script>
+  // Shared "Run now" guard: confirm, then inject the confirmation the action
+  // endpoints require. With JavaScript off the form submits without that field,
+  // so the server rejects it and nothing runs (fails closed).
+  function pgkConfirm(form, message) {
+    if (!window.confirm(message)) return false;
+    var field = document.createElement("input");
+    field.type = "hidden";
+    field.name = "confirm";
+    field.value = "on";
+    form.appendChild(field);
+    return true;
+  }
+</script>
 </body>
 </html>
