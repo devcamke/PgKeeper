@@ -30,11 +30,27 @@ module PgKeeper
 
       type = (config["type"] || "aes256gcm").to_s
       case type
-      when "aes256gcm" then Aes256Gcm.new(key: resolve_key(config, env))
+      when "aes256gcm" then Aes256Gcm.new(keys: resolve_keys(config, env))
       when "gpg" then build_gpg(config, env)
       else
         raise ConfigError, "unknown encryption type: #{type.inspect} (expected one of #{TYPES.join(', ')})"
       end
+    end
+
+    # The full AES keyring: the primary key first (used for encryption), then any
+    # previous keys retired by a rotation (used only to decrypt older backups).
+    # See +previous_passphrase_envs+ / +previous_keyfiles+ in the config.
+    def resolve_keys(config, env)
+      keys = [resolve_key(config, env)]
+
+      Array(config["previous_passphrase_envs"]).each do |var|
+        secret = env[var]
+        raise ConfigError, "encryption previous passphrase env #{var} is not set" if secret.nil? || secret.empty?
+
+        keys << KeyMaterial.from_passphrase(secret)
+      end
+      Array(config["previous_keyfiles"]).each { |path| keys << KeyMaterial.from_keyfile(path) }
+      keys
     end
 
     # Derive raw 32-byte key material for AES from either a passphrase env var or

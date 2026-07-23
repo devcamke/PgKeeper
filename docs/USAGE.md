@@ -239,6 +239,26 @@ sudo systemctl enable --now pgkeeper-all.timer      # name shown by the command
 pgkeeper daemon --jitter 120        # runs in-process; jitter staggers multi-DB runs
 ```
 
+**Schedule the upkeep jobs too, not just the backup.** A `maintenance:` block
+automates verification and pruning the same way `schedule:` automates the
+backup — so you don't have to remember to hand-wire a second cron line:
+
+```yaml
+maintenance:
+  verify:
+    schedule: weekly on sunday at 04:00
+    deep: true             # Tier-3 scratch-restore
+  prune:
+    schedule: daily at 05:00
+    apply: true            # actually delete (omit for dry-run)
+```
+
+`pgkeeper schedule install` then emits an independent, separately locked cron
+line / systemd timer per job (`pgkeeper-verify-all.timer`,
+`pgkeeper-prune-all.timer`), and `pgkeeper daemon` runs them in-process
+alongside the backups. `pgkeeper schedule print` shows every job with its
+action.
+
 Whichever you choose, add the dead-man's switch (`notifications.healthcheck`)
 — email alerts can't tell you about a scheduler that silently stopped
 running, a missed ping can.
@@ -258,8 +278,8 @@ pgkeeper verify all             # verify every stored backup, not just latest
 
 Passing marks the backup `verified` in its manifest — visible in `list` and
 the dashboard, and retention will never delete backups newer than the last
-verified one. **Schedule `verify --deep` weekly** (a second cron entry or
-systemd timer is fine).
+verified one. **Schedule `verify --deep` weekly** via the `maintenance.verify`
+block (see §7) so it runs unattended like the backup itself.
 
 Restore (full runbook in [RESTORE.md](RESTORE.md)):
 

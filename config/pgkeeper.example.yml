@@ -20,6 +20,21 @@ workdir: /var/backups/pgkeeper
 # `pgkeeper schedule install`, or run `pgkeeper daemon` in a container.
 schedule: daily at 03:15
 
+# Scheduled upkeep beyond the backup itself. `schedule:` above automates the
+# *backup*; this automates the two jobs that keep those backups trustworthy and
+# bounded — verification and pruning — the same way. `pgkeeper schedule install`
+# emits a distinct cron line / systemd timer for each, and `pgkeeper daemon`
+# fires them in-process. Omit a task (or its `schedule:`) to not schedule it;
+# both remain runnable by hand (`pgkeeper verify` / `pgkeeper prune`).
+# maintenance:
+#   verify:
+#     schedule: weekly on sunday at 04:00
+#     deep: true            # Tier-3: restore into a throwaway scratch database
+#     # only: [app_production]   # optional; default is every database
+#   prune:
+#     schedule: daily at 05:00
+#     apply: true           # actually delete (omit/false = dry-run only)
+
 # Settings applied to every database unless the database overrides them.
 defaults:
   host: localhost
@@ -54,6 +69,14 @@ encryption:
   enabled: false
   type: aes256gcm
   passphrase_env: PGKEEPER_ENCRYPTION_PASSPHRASE
+  # Key rotation: after changing the passphrase/keyfile above, keep the retired
+  # key(s) here so backups written under them stay restorable and verifiable.
+  # New backups always use the primary key; decryption tries each in turn. Drop
+  # an entry once every backup encrypted under it has aged out of retention.
+  # previous_passphrase_envs:
+  #   - PGKEEPER_ENCRYPTION_PASSPHRASE_2025
+  # previous_keyfiles:
+  #   - /etc/pgkeeper/keys/2025.key
 
 # Backup destinations. Every run fans out to all of them; each is tracked
 # independently, so one cloud being down never fails the local copy.
@@ -83,6 +106,15 @@ storage:
   #   # force_path_style: true   # needed by MinIO and some S3-compatibles
   #   access_key_id: <%= ENV["AWS_ACCESS_KEY_ID"] %>
   #   secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
+  #   # Immutable backups (WORM): make each uploaded object undeletable until it
+  #   # expires, so a leaked credential — or a bug in `prune` — can't destroy
+  #   # your backups. The bucket must be created with Object Lock enabled (a
+  #   # create-time setting). COMPLIANCE can't be shortened by anyone, including
+  #   # root; GOVERNANCE can be bypassed by a privileged caller. Keep retain_days
+  #   # >= your retention window.
+  #   object_lock:
+  #     mode: COMPLIANCE       # GOVERNANCE | COMPLIANCE
+  #     retain_days: 35
 
   # Dropbox (no gem required). Large files stream through an upload session, so
   # dumps above Dropbox's 150 MB single-request limit upload fine. Use a

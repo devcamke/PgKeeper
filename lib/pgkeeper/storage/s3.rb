@@ -23,12 +23,13 @@ module PgKeeper
 
       def initialize(bucket:, region: nil, prefix: "", endpoint: nil,
                      access_key_id: nil, secret_access_key: nil, force_path_style: false,
-                     multipart_threshold: MULTIPART_THRESHOLD, **)
+                     multipart_threshold: MULTIPART_THRESHOLD, object_lock: nil, **)
         super(**)
         require_sdk!
         @bucket = bucket
         @prefix = normalize_prefix(prefix)
         @multipart_threshold = multipart_threshold
+        @object_lock = normalize_object_lock(object_lock)
         @client = build_client(region, endpoint, access_key_id, secret_access_key, force_path_style)
       end
 
@@ -52,7 +53,7 @@ module PgKeeper
 
       def init_with_client(client, bucket:, prefix: "", logger: PgKeeper.logger,
                            retry_attempts: DEFAULT_ATTEMPTS, retry_base: 0.5,
-                           multipart_threshold: MULTIPART_THRESHOLD)
+                           multipart_threshold: MULTIPART_THRESHOLD, object_lock: nil)
         @logger = logger
         @retry_attempts = retry_attempts
         @retry_base = retry_base
@@ -60,6 +61,7 @@ module PgKeeper
         @bucket = bucket
         @prefix = normalize_prefix(prefix)
         @multipart_threshold = multipart_threshold
+        @object_lock = normalize_object_lock(object_lock)
       end
 
       # The SDK's transfer manager picks the transfer method by size: a single
@@ -68,7 +70,29 @@ module PgKeeper
       # than the 5 GiB single-PUT limit go through fine.
       def do_upload(local_path, remote_path)
         transfer_manager.upload_file(local_path, bucket: @bucket, key: key(remote_path),
-                                                 multipart_threshold: @multipart_threshold)
+                                                 multipart_threshold: @multipart_threshold,
+                                                 **object_lock_params)
+      end
+
+      # Per-upload Object Lock (WORM) retention. When configured, S3 refuses to
+      # delete or overwrite the object until the retain-until date, so a leaked
+      # credential — or a bug in +prune+ — cannot destroy the backup inside its
+      # window. The retain-until date is computed per upload from +retain_days+.
+      # Returns an empty hash when Object Lock isn't configured, so uploads to
+      # buckets without it are unaffected.
+      def object_lock_params
+        return {} if @object_lock.nil?
+
+        {
+          object_lock_mode: @object_lock[:mode],
+          object_lock_retain_until_date: (Time.now + (@object_lock[:retain_days] * 86_400)).utc
+        }
+      end
+
+      def normalize_object_lock(cfg)
+        return nil if cfg.nil?
+
+        { mode: cfg["mode"] || cfg[:mode], retain_days: (cfg["retain_days"] || cfg[:retain_days]).to_i }
       end
 
       def transfer_manager

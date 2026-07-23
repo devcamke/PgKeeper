@@ -84,5 +84,41 @@ module PgKeeper
       daemon = Daemon.new(config("databases" => [{ "name" => "app" }]), logger: null_logger)
       assert_raises(Error) { daemon.run(max_ticks: 1) }
     end
+
+    def test_maintenance_jobs_fire_with_their_action_and_flags
+      clock = FakeClock.new(Time.utc(2026, 5, 1, 3, 59, 0))
+      fired = []
+      cfg = config(
+        "databases" => [{ "name" => "app" }],
+        "maintenance" => {
+          "verify" => { "schedule" => "daily at 04:00", "deep" => true },
+          "prune" => { "schedule" => "daily at 05:00", "apply" => true }
+        }
+      )
+      daemon = build_daemon(cfg, clock, runner: ->(e) { fired << [e.action, e.flags] })
+
+      daemon.run(max_ticks: 2)
+
+      assert_includes fired, [:verify, ["--deep"]]
+      assert_includes fired, [:prune, ["--apply"]]
+    end
+
+    def test_default_runner_dispatches_on_action
+      cfg = config(
+        "databases" => [{ "name" => "app" }],
+        "maintenance" => { "verify" => { "schedule" => "daily at 04:00" },
+                           "prune" => { "schedule" => "daily at 05:00" } }
+      )
+      daemon = Daemon.new(cfg, logger: null_logger)
+      seen = []
+      # Stand in for the heavyweight collaborators so we assert *dispatch* only.
+      daemon.define_singleton_method(:run_backup) { |e| seen << [:backup, e.action] }
+      daemon.define_singleton_method(:run_verify) { |e| seen << [:verify, e.action] }
+      daemon.define_singleton_method(:run_prune) { |e| seen << [:prune, e.action] }
+
+      Scheduler.entries(cfg).each { |e| daemon.send(:run_action, e) }
+
+      assert_equal [%i[verify verify], %i[prune prune]], seen
+    end
   end
 end

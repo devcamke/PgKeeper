@@ -7,6 +7,31 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **Scheduled verification & pruning (`maintenance:`).** The scheduler used to
+  automate only the backup; verify and prune had to be hand-wired into cron even
+  though the tool's whole premise is *a backup you haven't restored isn't a
+  backup*. A new `maintenance:` block schedules them as first-class jobs —
+  `maintenance.verify.schedule` (with `deep:` for a Tier-3 scratch-restore) and
+  `maintenance.prune.schedule` (with `apply:`), each optionally scoped with
+  `only:`. `pgkeeper schedule install` now emits a distinct, independently
+  locked cron line / systemd timer per action (`pgkeeper-verify-all.timer`,
+  `pgkeeper-prune-all.timer`), and `pgkeeper daemon` fires them in-process by
+  dispatching on each entry's action. Existing backup schedules are unchanged
+  (same cron lock name, same `pgkeeper-backup-*` unit names).
+- **Immutable backups on S3 (Object Lock / WORM).** An S3 destination can carry
+  an `object_lock:` block (`mode: GOVERNANCE|COMPLIANCE`, `retain_days:`) that
+  stamps each uploaded object with a retain-until date, so a leaked credential —
+  or a bug in `prune` — cannot delete or overwrite a backup before it expires.
+  The retention safety rails only ever guarded PgKeeper's *own* pruning; this
+  guards against deletion by anyone. Works with multipart uploads; the bucket
+  must be created with Object Lock enabled.
+- **Encryption key rotation (keyring).** `encryption:` now accepts
+  `previous_passphrase_envs` / `previous_keyfiles` — the keys retired by a
+  rotation. New backups always encrypt under the primary key, while decryption
+  (restore and verify) tries every key in turn, so rotating the passphrase no
+  longer strands the backups written under the old one. A wrong key with no
+  match still fails loudly and leaves no partial output.
+
 - **Onboarding wizard (`pgkeeper connect`).** An interactive flow that connects
   a database and schedules its backups, then writes `pgkeeper.yml`. It collects
   the connection details, live-tests the credentials with a bounded `psql`

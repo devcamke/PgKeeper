@@ -39,6 +39,86 @@ module PgKeeper
       assert_empty Scheduler.entries(config("databases" => [{ "name" => "a" }]))
     end
 
+    # --- maintenance (verify / prune) entries -----------------------------
+
+    def test_maintenance_adds_verify_and_prune_entries
+      cfg = config(
+        "schedule" => "daily at 03:15",
+        "databases" => [{ "name" => "app" }],
+        "maintenance" => {
+          "verify" => { "schedule" => "weekly on sunday at 04:00", "deep" => true },
+          "prune" => { "schedule" => "daily at 05:00", "apply" => true }
+        }
+      )
+      by_action = Scheduler.entries(cfg).to_h { |e| [e.action, e] }
+
+      assert_equal %i[backup prune verify], by_action.keys.sort
+      assert_equal ["--deep"], by_action[:verify].flags
+      assert_equal "0 4 * * 0", by_action[:verify].schedule.to_cron
+      assert_equal ["--apply"], by_action[:prune].flags
+      assert_nil by_action[:prune].only
+    end
+
+    def test_maintenance_only_scopes_the_entry
+      cfg = config(
+        "databases" => [{ "name" => "app" }, { "name" => "reports" }],
+        "maintenance" => { "verify" => { "schedule" => "daily at 04:00", "only" => "reports" } }
+      )
+      entry = Scheduler.entries(cfg).first
+
+      assert_equal :verify, entry.action
+      assert_equal ["reports"], entry.only
+      assert_equal "reports", entry.label
+      assert_equal ["--only", "reports"], entry.scope_args
+    end
+
+    def test_maintenance_only_verify_scheduled_without_a_backup_schedule
+      cfg = config(
+        "databases" => [{ "name" => "app" }],
+        "maintenance" => { "prune" => { "schedule" => "daily at 05:00" } }
+      )
+
+      assert_equal [:prune], Scheduler.entries(cfg).map(&:action)
+    end
+
+    # --- cron / systemd rendering for maintenance -------------------------
+
+    def test_cron_lines_for_verify_and_prune_are_distinct
+      cfg = config(
+        "schedule" => "daily at 03:15",
+        "databases" => [{ "name" => "app" }],
+        "maintenance" => {
+          "verify" => { "schedule" => "weekly on sunday at 04:00", "deep" => true },
+          "prune" => { "schedule" => "daily at 05:00", "apply" => true }
+        }
+      )
+      lines = Scheduler::Cron.new(Scheduler.entries(cfg), config_path: "/etc/pgkeeper.yml",
+                                                          workdir: "/var/pgk").lines
+
+      verify = lines.grep(/ verify /).first
+      prune = lines.grep(/ prune /).first
+
+      assert_includes verify, "/var/pgk/.cron-verify-all.lock"
+      assert_includes verify, "pgkeeper verify --config /etc/pgkeeper.yml --deep"
+      assert_includes prune, "/var/pgk/.cron-prune-all.lock"
+      assert_includes prune, "pgkeeper prune --config /etc/pgkeeper.yml --apply"
+      # Backup keeps its original bare lock name (no action prefix).
+      assert(lines.any? { |l| l.include?("/var/pgk/.cron-all.lock") && l.include?("pgkeeper backup") })
+    end
+
+    def test_systemd_units_are_namespaced_by_action
+      cfg = config(
+        "databases" => [{ "name" => "app" }],
+        "maintenance" => { "verify" => { "schedule" => "weekly on sunday at 04:00", "deep" => true } }
+      )
+      units = Scheduler::Systemd.new(Scheduler.entries(cfg), config_path: "/etc/pgkeeper.yml").units
+
+      assert_includes units.keys, "pgkeeper-verify-all.service"
+      assert_includes units.keys, "pgkeeper-verify-all.timer"
+      assert_includes units["pgkeeper-verify-all.service"],
+                      "ExecStart=pgkeeper verify --config /etc/pgkeeper.yml --deep"
+    end
+
     # --- cron generation (golden) -----------------------------------------
 
     def test_cron_line_has_flock_guard_and_scope

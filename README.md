@@ -52,8 +52,9 @@ multi-destination redundancy**. In short:
   corrupt dump *fails* verification instead of passing. A verified backup is also
   protected from pruning. _A backup you have never restored is not a backup._
 - **Secure** — AES-256-GCM authenticated encryption **before** upload (clouds never see
-  plaintext), secrets kept in the environment (never inlined), and a dashboard that
-  refuses to boot without auth, compares credentials in constant time, binds to
+  plaintext), **key rotation** through a keyring so retiring a passphrase never strands the
+  backups written under it, secrets kept in the environment (never inlined), and a dashboard
+  that refuses to boot without auth, compares credentials in constant time, binds to
   `127.0.0.1`, gates every mutating action behind CSRF, and keeps restores CLI-only.
 - **Predictable** — flock-guarded runs, staging + atomic finalize (a crash never leaves a
   half-written backup), wall-clock timeouts on every child process, a disk preflight that
@@ -61,7 +62,9 @@ multi-destination redundancy**. In short:
   anomaly detection that flags a silently-shrinking dump.
 - **Redundant & assured** — independent fan-out to multiple destinations (one outage fails
   only that destination), retention safety rails that never delete your only or newest
-  backup, plus a dead-man's switch, notifications, and Prometheus metrics.
+  backup, optional **S3 Object Lock (WORM)** so a leaked credential or a rogue `prune` can't
+  delete a backup before it expires, plus a dead-man's switch, notifications, and Prometheus
+  metrics.
 
 **Know the boundary:** PgKeeper takes logical dumps, **not** point-in-time recovery — your
 recovery point is your last completed dump, so your RPO is your backup interval. See
@@ -128,11 +131,13 @@ tool if you need minutes-or-seconds RPO.
   the backup itself.
 - **Scheduling** — set a `schedule:` (cron, natural language, or shorthands like
   `daily at 03:15`), globally or per-database — interactively via `pgkeeper connect` or by
-  hand. `pgkeeper schedule install` emits
+  hand. A `maintenance:` block schedules the upkeep jobs too — **`verify` (with `--deep`)
+  and `prune`** — so verification and retention run unattended like the backup itself, not
+  as forgotten hand-wired cron lines. `pgkeeper schedule install` emits
   **flock-guarded crontab lines** or **systemd service+timer units** (with
-  `RandomizedDelaySec` stagger and `Persistent=true` catch-up); `pgkeeper schedule print`
-  shows the resolved plan. For containers without cron/systemd, `pgkeeper daemon` runs the
-  schedules in-process with jitter.
+  `RandomizedDelaySec` stagger and `Persistent=true` catch-up), one per job;
+  `pgkeeper schedule print` shows the resolved plan. For containers without cron/systemd,
+  `pgkeeper daemon` runs every schedule in-process with jitter.
 
 - **`pgkeeper web`** — the optional monitoring dashboard:
   - **Overview**: per-database traffic lights (last run, last verified age, next scheduled

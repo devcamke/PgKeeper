@@ -8,7 +8,7 @@ module PgKeeper
     # +RandomizedDelaySec+ staggers multiple databases so they don't all hit the
     # server at once.
     class Systemd
-      def initialize(entries, config_path:, bin: "pgkeeper", unit_prefix: "pgkeeper-backup", jitter_seconds: 0)
+      def initialize(entries, config_path:, bin: "pgkeeper", unit_prefix: "pgkeeper", jitter_seconds: 0)
         @entries = entries
         @bin = bin
         @config_path = config_path
@@ -16,20 +16,22 @@ module PgKeeper
         @jitter_seconds = jitter_seconds
       end
 
-      # A { filename => contents } map of every unit file to install.
+      # A { filename => contents } map of every unit file to install. The action
+      # is part of the unit name (+pgkeeper-backup-app+, +pgkeeper-verify-all+),
+      # so backup, verify, and prune install as independent timers.
       def units
         @entries.each_with_object({}) do |entry, files|
-          base = "#{@unit_prefix}-#{entry.label}"
+          base = "#{@unit_prefix}-#{entry.action}-#{entry.label}"
           files["#{base}.service"] = service_unit(entry)
           files["#{base}.timer"] = timer_unit(entry)
         end
       end
 
       def service_unit(entry)
-        exec = [@bin, "backup", "--config", @config_path, *entry.scope_args].join(" ")
+        exec = [@bin, entry.action.to_s, "--config", @config_path, *entry.command_args].join(" ")
         <<~UNIT
           [Unit]
-          Description=PgKeeper backup (#{entry.label})
+          Description=PgKeeper #{entry.action} (#{entry.label})
           After=network-online.target
           Wants=network-online.target
 
@@ -44,7 +46,7 @@ module PgKeeper
         timer << "RandomizedDelaySec=#{@jitter_seconds}" if @jitter_seconds.positive?
         <<~UNIT
           [Unit]
-          Description=PgKeeper backup timer (#{entry.label})
+          Description=PgKeeper #{entry.action} timer (#{entry.label})
 
           [Timer]
           #{timer.join("\n")}

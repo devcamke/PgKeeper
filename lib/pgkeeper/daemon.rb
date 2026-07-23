@@ -3,8 +3,8 @@
 module PgKeeper
   # Long-running scheduler for container deployments where cron/systemd aren't
   # available. It computes each schedule's next fire time, sleeps until the
-  # soonest, runs the due backups (isolated so one failure doesn't stop the
-  # loop), and repeats.
+  # soonest, runs the due job (isolated so one failure doesn't stop the loop),
+  # and repeats. Jobs are backups, verifies, or prunes, per the entry's action.
   #
   # The clock, sleeper, and runner are injectable so the tick loop can be driven
   # deterministically in tests with a fake clock instead of real time.
@@ -17,7 +17,7 @@ module PgKeeper
       @sleeper = sleeper
       @jitter = jitter
       @entries = Scheduler.entries(config)
-      @runner = runner || method(:run_backup)
+      @runner = runner || method(:run_action)
     end
 
     attr_reader :entries
@@ -65,14 +65,33 @@ module PgKeeper
     end
 
     def run_entry(entry)
-      @logger.info("scheduled run firing", schedule: entry.label)
+      @logger.info("scheduled run firing", schedule: entry.label, action: entry.action)
       @runner.call(entry)
     rescue StandardError => e
-      @logger.error("scheduled run failed (non-fatal to daemon)", schedule: entry.label, error: e.message)
+      @logger.error("scheduled run failed (non-fatal to daemon)",
+                    schedule: entry.label, action: entry.action, error: e.message)
+    end
+
+    # Default runner: dispatch on the entry's action. Injectable in tests.
+    def run_action(entry)
+      case entry.action
+      when :verify then run_verify(entry)
+      when :prune then run_prune(entry)
+      else run_backup(entry)
+      end
     end
 
     def run_backup(entry)
       Orchestrator.new(@config, logger: @logger).run(only: entry.only)
+    end
+
+    def run_verify(entry)
+      Verifier.new(@config, logger: @logger)
+              .verify(selector: "latest", deep: entry.flags.include?("--deep"), only: entry.only)
+    end
+
+    def run_prune(entry)
+      Pruner.new(@config, logger: @logger).prune(apply: entry.flags.include?("--apply"), only: entry.only)
     end
   end
 end

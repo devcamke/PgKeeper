@@ -41,8 +41,8 @@ module PgKeeper
       end
 
       def command_for(entry)
-        lock = File.join(@workdir, ".cron-#{entry.label}.lock")
-        argv = [@flock, "-n", lock, @bin, "backup", "--config", @config_path, *entry.scope_args]
+        lock = File.join(@workdir, ".cron-#{entry.slug}.lock")
+        argv = [@flock, "-n", lock, @bin, entry.action.to_s, "--config", @config_path, *entry.command_args]
         "#{argv.map { |a| Shellwords.escape(a) }.join(' ')} >> #{Shellwords.escape(@log_file)} 2>&1"
       end
     end

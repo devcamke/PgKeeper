@@ -110,6 +110,77 @@ module PgKeeper
       assert_raises(ConfigError) { Crypto.build(cfg, env: { "X" => "p" }) }
     end
 
+    # --- key rotation (keyring) -------------------------------------------
+
+    # After rotating the passphrase, a backup written under the OLD passphrase
+    # must still decrypt as long as the old passphrase is kept in the keyring via
+    # `previous_passphrase_envs`.
+    def test_rotated_key_still_decrypts_old_backups
+      in_tmpdir do |dir|
+        source = File.join(dir, "plain.dump")
+        payload = "written under the old key " * 500
+        File.binwrite(source, payload)
+
+        old = Crypto.build(PASS_CONFIG, env: { "PGKEEPER_TEST_PASS" => "old-secret" })
+        enc = File.join(dir, "old.enc")
+        old.encrypt(source, enc)
+
+        rotated = Crypto.build(
+          PASS_CONFIG.merge("previous_passphrase_envs" => ["OLD_PASS"]),
+          env: { "PGKEEPER_TEST_PASS" => "new-secret", "OLD_PASS" => "old-secret" }
+        )
+        restored = File.join(dir, "restored.dump")
+        rotated.decrypt(enc, restored)
+
+        assert_equal payload, File.binread(restored)
+      end
+    end
+
+    def test_new_backups_use_the_primary_key_only
+      in_tmpdir do |dir|
+        source = File.join(dir, "plain.dump")
+        File.binwrite(source, "fresh payload")
+
+        rotated = Crypto.build(
+          PASS_CONFIG.merge("previous_passphrase_envs" => ["OLD_PASS"]),
+          env: { "PGKEEPER_TEST_PASS" => "new-secret", "OLD_PASS" => "old-secret" }
+        )
+        enc = File.join(dir, "new.enc")
+        rotated.encrypt(source, enc)
+
+        # Only the retired key: cannot decrypt a backup written with the new key.
+        only_old = Crypto.build(PASS_CONFIG, env: { "PGKEEPER_TEST_PASS" => "old-secret" })
+        assert_raises(Error) { only_old.decrypt(enc, File.join(dir, "nope.dump")) }
+
+        # The new (primary) key decrypts it.
+        only_new = Crypto.build(PASS_CONFIG, env: { "PGKEEPER_TEST_PASS" => "new-secret" })
+        only_new.decrypt(enc, File.join(dir, "ok.dump"))
+
+        assert_equal "fresh payload", File.binread(File.join(dir, "ok.dump"))
+      end
+    end
+
+    def test_wrong_key_with_no_previous_raises_and_leaves_no_output
+      in_tmpdir do |dir|
+        source = File.join(dir, "plain.dump")
+        File.binwrite(source, "secret")
+        enc = File.join(dir, "x.enc")
+        Crypto.build(PASS_CONFIG, env: { "PGKEEPER_TEST_PASS" => "right" }).encrypt(source, enc)
+
+        wrong = Crypto.build(PASS_CONFIG, env: { "PGKEEPER_TEST_PASS" => "wrong" })
+        out = File.join(dir, "out.dump")
+        assert_raises(Error) { wrong.decrypt(enc, out) }
+        refute_path_exists out, "a failed decrypt must not leave a partial file"
+      end
+    end
+
+    def test_missing_previous_passphrase_env_raises
+      cfg = PASS_CONFIG.merge("previous_passphrase_envs" => ["NOT_SET"])
+      assert_raises(ConfigError) do
+        Crypto.build(cfg, env: { "PGKEEPER_TEST_PASS" => "p" })
+      end
+    end
+
     def test_gpg_symmetric_round_trips_or_skips
       gpg = Crypto.build(
         { "enabled" => true, "type" => "gpg", "passphrase_env" => "GPGPASS" },
