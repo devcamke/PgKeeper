@@ -2,6 +2,16 @@
 
 require "rake/testtask"
 
+# Gem-packaging tasks (build / install / release) derived from the gemspec, so
+# `rake install` puts the current checkout on your PATH as `pgkeeper`. Guarded
+# like the RuboCop task below: a minimal environment without Bundler simply
+# skips these and keeps the test/lint tasks working.
+begin
+  require "bundler/gem_tasks"
+rescue LoadError
+  warn "bundler/gem_tasks unavailable; `rake build`/`install`/`release` are disabled"
+end
+
 Rake::TestTask.new(:test) do |t|
   t.libs << "test"
   t.libs << "lib"
