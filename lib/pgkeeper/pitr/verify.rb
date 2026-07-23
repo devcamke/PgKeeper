@@ -63,26 +63,16 @@ module PgKeeper
       end
 
       def latest_base
-        discover.select { |a| a.kind == "base" }.max_by(&:timestamp)
+        Inventory.bases(discover).max_by(&:timestamp)
       end
 
       def archived_segments
-        discover.select { |a| a.kind == "wal" }.filter_map(&:segment).uniq.sort
+        Inventory.wal(discover).filter_map(&:segment).uniq.sort
       end
 
       # Cataloged artifacts for this cluster across destinations, deduped by path.
       def discover
-        seen = {}
-        @adapters.flat_map do |adapter|
-          Catalog.new(adapter).artifacts(database: @cluster.name).filter_map do |artifact|
-            next if seen[artifact.remote_path]
-
-            seen[artifact.remote_path] = true
-            artifact
-          end
-        rescue EnvironmentError, StorageError
-          []
-        end
+        @discover ||= Inventory.artifacts(@cluster, @adapters)
       end
 
       def result(passed, detail, base = nil, chain = nil, gap = nil)

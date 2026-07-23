@@ -71,6 +71,9 @@ databases:
 #       mode: stream              # stream (pg_receivewal) | archive (bridge)
 #       slot: pgkeeper            # replication slot (stream mode)
 #       recovery_window: 7d       # keep enough base + WAL to recover this far back
+#       max_lag: 15m              # dead-man's switch: alarm when the newest archived
+#                                 # WAL is older than this (status/dashboard/metrics).
+#                                 # Unset = report lag, don't alarm on it.
 #       base_backup:
 #         schedule: "daily at 02:00"
 #       # WAL + base reuse the top-level storage/compression/encryption; an

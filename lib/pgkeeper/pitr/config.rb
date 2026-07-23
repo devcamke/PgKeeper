@@ -75,7 +75,7 @@ module PgKeeper
   # the recovery window it promises, the base-backup cadence, and an optional
   # destination subset. Self-validating (accumulates +validation_problems+).
   class PitrConfig
-    KEYS = %w[enabled mode slot recovery_window base_backup destinations].freeze
+    KEYS = %w[enabled mode slot recovery_window max_lag base_backup destinations].freeze
     MODES = %w[stream archive].freeze
     BASE_BACKUP_KEYS = %w[schedule].freeze
 
@@ -83,7 +83,7 @@ module PgKeeper
     DURATION_UNITS = { "s" => 1, "m" => 60, "h" => 3_600, "d" => 86_400, "w" => 604_800 }.freeze
 
     attr_reader :enabled, :mode, :slot, :recovery_window, :recovery_window_seconds,
-                :base_backup_schedule, :destinations, :validation_problems
+                :max_lag, :max_lag_seconds, :base_backup_schedule, :destinations, :validation_problems
 
     def initialize(hash)
       @validation_problems = []
@@ -93,7 +93,11 @@ module PgKeeper
       @mode = coerce_enum(hash["mode"] || "stream", MODES, "mode")
       @slot = hash["slot"] || "pgkeeper"
       @recovery_window = hash["recovery_window"]
-      @recovery_window_seconds = coerce_duration(@recovery_window) unless @recovery_window.nil?
+      @recovery_window_seconds = coerce_duration(@recovery_window, "recovery_window") unless @recovery_window.nil?
+      # The dead-man's switch: alarm when the newest archived WAL is older than
+      # this. Unset means "report lag, don't alarm on it".
+      @max_lag = hash["max_lag"]
+      @max_lag_seconds = coerce_duration(@max_lag, "max_lag") unless @max_lag.nil?
       @destinations = coerce_destinations(hash["destinations"])
       @base_backup_schedule = coerce_base_backup(hash["base_backup"])
     end
@@ -121,10 +125,10 @@ module PgKeeper
     end
 
     # Parse "<n><unit>" (e.g. "7d") into seconds; record a problem on a bad value.
-    def coerce_duration(value)
+    def coerce_duration(value, key)
       m = value.to_s.strip.match(/\A(\d+)\s*([smhdw])\z/)
       unless m
-        @validation_problems << "recovery_window must look like 7d / 12h / 30m (got #{value.inspect})"
+        @validation_problems << "#{key} must look like 7d / 12h / 30m (got #{value.inspect})"
         return nil
       end
       m[1].to_i * DURATION_UNITS.fetch(m[2])

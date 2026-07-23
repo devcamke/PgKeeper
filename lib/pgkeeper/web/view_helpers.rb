@@ -47,6 +47,17 @@ module PgKeeper
         "?"
       end
 
+      # A compact duration like "5m", "3h", "7d" — for spans (lag, window) rather
+      # than a moment in the past ({#human_age} adds "ago").
+      def human_duration(seconds)
+        return "-" if seconds.nil?
+        return "#{seconds}s" if seconds < 60
+        return "#{seconds / 60}m" if seconds < 3600
+        return "#{seconds / 3600}h" if seconds < 86_400
+
+        "#{seconds / 86_400}d"
+      end
+
       def fmt_time(time)
         time = Time.iso8601(time) if time.is_a?(String)
         time&.utc&.strftime("%Y-%m-%d %H:%M:%SZ") || "-"

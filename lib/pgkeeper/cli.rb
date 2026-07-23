@@ -183,6 +183,7 @@ module PgKeeper
                history.last_per_database
              end
       print_status(rows)
+      print_pitr_status(config) unless options[:database]
     end
 
     desc "metrics", "Print Prometheus metrics (last run/success time, size, duration) for scraping"
@@ -605,6 +606,55 @@ module PgKeeper
       def status_marker(status)
         { "success" => ["✓", :green], "partial" => ["!", :yellow], "failure" => ["✗", :red] }
           .fetch(status, ["?", nil])
+      end
+
+      # PITR recovery readiness per cluster: WAL freshness (lag), how far back a
+      # restore reaches (window), and the dead-man's switch on stalled archiving.
+      def print_pitr_status(config)
+        snapshots = PITR::Health.new(config, logger: logger).snapshots
+        return if snapshots.empty?
+
+        say "\nPITR clusters", :cyan
+        snapshots.each { |snap| print_pitr_snapshot(snap) }
+      end
+
+      def print_pitr_snapshot(snap)
+        glyph, color = pitr_marker(snap)
+        say format("%<g>s %<name>-20s %<lag>-22s %<win>s",
+                   g: glyph, name: snap.cluster, lag: pitr_lag_label(snap), win: pitr_window_label(snap)), color
+      end
+
+      def pitr_marker(snap)
+        return ["✗", :red] if snap.stalled? || !snap.base? || !snap.wal?
+        return ["!", :yellow] if snap.window_short?
+
+        ["✓", :green]
+      end
+
+      def pitr_lag_label(snap)
+        return "no WAL archived" unless snap.wal?
+
+        label = "WAL lag #{human_duration(snap.lag_seconds)}"
+        label += " (STALLED)" if snap.stalled?
+        label
+      end
+
+      def pitr_window_label(snap)
+        return "no base backup" unless snap.base?
+
+        label = "window #{human_duration(snap.recovery_window_seconds)}"
+        label += " < #{human_duration(snap.promised_window_seconds)} promised" if snap.window_short?
+        label
+      end
+
+      # A compact duration like "5m", "3h", "7d" (nil -> "?").
+      def human_duration(seconds)
+        return "?" if seconds.nil?
+        return "#{seconds}s" if seconds < 60
+        return "#{seconds / 60}m" if seconds < 3600
+        return "#{seconds / 3600}h" if seconds < 86_400
+
+        "#{seconds / 86_400}d"
       end
 
       def test_summary

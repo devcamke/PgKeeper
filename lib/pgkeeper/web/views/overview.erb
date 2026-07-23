@@ -28,6 +28,40 @@
   <%- end -%>
 </table>
 
+<%- unless @pitr.empty? -%>
+<h2>PITR clusters</h2>
+<table>
+  <tr>
+    <th></th><th>Cluster</th><th>WAL lag</th><th>Last WAL</th>
+    <th>Recovery window</th><th>Last base backup</th><th>Bases / WAL</th>
+  </tr>
+  <%- @pitr.each do |snap| -%>
+  <tr>
+    <td><%= light_dot(snap.light) %></td>
+    <td><strong><%= h(snap.cluster) %></strong></td>
+    <%- if snap.wal? -%>
+    <td>
+      <%= snap.stalled? ? pill("#{human_duration(snap.lag_seconds)} — stalled", "bad") : h(human_duration(snap.lag_seconds)) %>
+      <%- if snap.monitored? -%><span class="muted">/ <%= h(human_duration(snap.max_lag_seconds)) %> max</span><%- end -%>
+    </td>
+    <td><%= tip(h(human_age(snap.last_wal_at)), "#{fmt_time(snap.last_wal_at)} · #{h(snap.last_wal_segment)}") %></td>
+    <%- else -%>
+    <td><%= pill("no WAL archived", "warn") %></td><td class="muted">-</td>
+    <%- end -%>
+    <%- if snap.base? -%>
+    <td>
+      <%= snap.window_short? ? pill("#{human_duration(snap.recovery_window_seconds)} < #{human_duration(snap.promised_window_seconds)} promised", "warn") : h(human_duration(snap.recovery_window_seconds)) %>
+    </td>
+    <td><%= tip(h(human_age(snap.last_base_at)), fmt_time(snap.last_base_at)) %></td>
+    <%- else -%>
+    <td><%= pill("no base backup", "warn") %></td><td class="muted">-</td>
+    <%- end -%>
+    <td class="mono"><%= snap.base_count %> / <%= snap.wal_count %></td>
+  </tr>
+  <%- end -%>
+</table>
+<%- end -%>
+
 <h2>Destinations</h2>
 <table>
   <tr><th></th><th>Destination</th><th>Type</th><th>Backup sets</th><th>Total size</th><th>Detail</th></tr>

@@ -7,6 +7,22 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **PITR Stage 6: observability — WAL lag, recovery window, dead-man's switch.**
+  PITR fails silently between restores: if WAL archiving stalls, or the reachable
+  recovery window quietly shrinks below its promise, nothing says so until a
+  restore comes up short. This surfaces both, everywhere PgKeeper already reports
+  health. A new `PITR::Health` computes, per cluster and from the catalog alone
+  (no live server): **WAL lag** (age of the newest archived segment), the
+  **recovery window** (span from the oldest base backup to now), and whether
+  either has crossed a line. One computation feeds three surfaces so they can't
+  disagree: `pgkeeper status` grows a *PITR clusters* section, the dashboard
+  overview grows a PITR panel (and `/api/status` a `pitr_clusters` array), and
+  `pgkeeper metrics` / `/metrics` emit `pgkeeper_wal_archive_lag_seconds`,
+  `pgkeeper_recovery_window_seconds`, `pgkeeper_last_base_backup_timestamp_seconds`,
+  and the dead-man's switch `pgkeeper_wal_archive_stalled` (1/0) — all labelled by
+  cluster. The switch is armed by a new optional `pitr.max_lag` (e.g. `15m`):
+  lag past it flags the cluster red in `status`/the dashboard and sets the
+  stalled metric to 1; unset, lag is reported but never alarmed on.
 - **PITR Stage 5: recovery-chain verification (`verify --pitr`).** A base backup
   is only restorable if the WAL that carries it forward is an unbroken run — a
   single missing segment silently caps how far a restore can replay, and today
