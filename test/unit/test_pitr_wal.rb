@@ -17,5 +17,12 @@ module PgKeeper
       assert_nil PITR::Wal.lsn_to_segment("0/8000028", nil)
       assert_nil PITR::Wal.lsn_to_segment("not-an-lsn", 1)
     end
+
+    def test_next_segment_increments_and_rolls_over_into_the_next_log
+      assert_equal "000000010000000000000009", PITR::Wal.next_segment("000000010000000000000008")
+      # ...000000FF is the last segment in a log; the next rolls the log over.
+      assert_equal "000000010000000100000000", PITR::Wal.next_segment("0000000100000000000000FF")
+      assert_nil PITR::Wal.next_segment("nope")
+    end
   end
 end
