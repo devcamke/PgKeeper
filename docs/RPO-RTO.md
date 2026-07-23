@@ -71,9 +71,11 @@ completed 16 MB segment shipped to storage as it fills.
   server's `archive_command` through `pgkeeper wal archive-file` (RPO = one
   segment's fill/timeout). Either way you recover to *any* instant in the window,
   so the recovery point is a moment you choose — not the last snapshot.
-- **The recovery window** — how far back you can go — is *newest base → end of
-  archived WAL*, held open by `pitr.recovery_window` (retention refuses to prune
-  base or WAL below it).
+- **The recovery window** — how far back you can go — reaches back to the
+  **oldest retained base** (you restore a base at or before your target and
+  replay forward), held open by `pitr.recovery_window` (retention refuses to
+  prune base or WAL below it). `pgkeeper status` and the
+  `pgkeeper_recovery_window_seconds` metric report it as *oldest base → now*.
 
 Three guardrails keep the PITR RPO you *chose* the one you actually *get*, all
 surfaced in `pgkeeper status`, the dashboard, and `pgkeeper metrics`:

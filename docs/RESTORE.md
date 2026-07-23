@@ -139,7 +139,9 @@ now:
   (`pitr.mode` records intent; a PgKeeper-supervised `pg_receivewal` streamer is
   on the roadmap — for now run it yourself and drain its spool.)
 
-The recovery horizon you can reach is *newest base → end of archived WAL*.
+The reachable recovery horizon spans *oldest retained base → end of archived
+WAL*: you restore a base at or before your target and replay WAL forward, so the
+**oldest** base sets how far back you can go.
 
 ### 1. Confirm you can actually recover — before you rely on it
 
@@ -235,9 +237,10 @@ If recovery **pauses** (`--action pause`), inspect the data, then finish with
   file, the WAL storage, and any encryption passphrase in the environment must
   all be reachable by that user — test `sudo -u postgres pgkeeper wal fetch ...`
   for one segment if a restore stalls fetching WAL.
-- **`--to-time` format** is a plain timestamp with an offset
-  (`2026-07-23 14:55:00+00`) — what Postgres expects; ISO-8601 with a `T` is
-  rejected.
+- **`--to-time` needs a timezone offset** (`2026-07-23 14:55:00+00`). PgKeeper
+  parses the value and reformats it for Postgres, so a space or an ISO-8601 `T`
+  separator both work — but an offset-less timestamp is read in an ambiguous
+  zone, so always include `+00` (or your offset).
 - **Recovery stops *before* the target**, so aim just past the last good write.
 - **Provide `postgresql.conf`/`pg_hba.conf`** before starting if your packaging
   keeps them outside the data directory.
