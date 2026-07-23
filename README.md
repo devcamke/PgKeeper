@@ -16,9 +16,13 @@ browser** (`pgkeeper web`), and **deployable with Docker**. See [PLAN.md](PLAN.m
 full multi-phase build plan, [CHANGELOG.md](CHANGELOG.md) for what shipped when, and
 [docs/RESTORE.md](docs/RESTORE.md) for the restore runbook.
 
-> **Known gap (by design, documented):** PgKeeper takes logical dumps — there is no WAL
-> archiving / point-in-time recovery, so a restore loses everything since the last dump.
-> Schedule accordingly; PITR guidance is on the post-v1 backlog (PLAN.md Phase 11).
+> **Recovery-point boundary (by design, documented):** PgKeeper takes logical dumps —
+> there is no WAL archiving / point-in-time recovery, so **your recovery point is your
+> last completed dump**: a restore loses everything written since then. Your RPO is
+> therefore your backup interval — schedule accordingly. If you need minutes-or-seconds
+> RPO, pair PgKeeper with a PITR tool. See **[docs/RPO-RTO.md](docs/RPO-RTO.md)** for how
+> to set an RPO/RTO SLA you can keep; PITR guidance is on the post-v1 backlog (PLAN.md
+> Phase 11).
 
 ## How it works
 
@@ -266,6 +270,10 @@ docker compose up -d
 
 - [docs/USAGE.md](docs/USAGE.md) — **the full usage guide**: install, configure,
   every command, scheduling, dashboard, Docker, library use, troubleshooting.
+- [docs/RPO-RTO.md](docs/RPO-RTO.md) — data-loss/recovery-time expectations and how
+  to set an SLA you can keep.
+- [docs/ASSESSMENT.md](docs/ASSESSMENT.md) — engineering review of the backup
+  guarantees (verifiable, secure, predictable) and where the boundaries are.
 - [docs/RESTORE.md](docs/RESTORE.md) — the 3 a.m. restore runbook.
 - [docs/SECURITY.md](docs/SECURITY.md) — least-privilege backup role, secrets,
   encryption, dashboard hardening.

@@ -274,6 +274,17 @@ module PgKeeper
       @prompt.say("  3. Schedule: pgkeeper schedule install    # render cron lines")
       @prompt.say("               pgkeeper schedule install --systemd --output /etc/systemd/system")
       @prompt.say("               pgkeeper daemon               # or run in-process (containers)")
+      recommend_deep_verify
+    end
+
+    # A backup you have never restored is not a backup. Steer new users toward a
+    # weekly deep verify from the start — it turns "we have backups" into "we have
+    # backups that provably restore", the guarantee that matters on recovery day.
+    def recommend_deep_verify
+      @prompt.heading("Recommended: prove your backups restore (weekly)")
+      @prompt.say("  Add a weekly deep verify — it restores into a throwaway DB and checks it:")
+      @prompt.say("    30 4 * * 0 pgkeeper verify --deep --config #{@config_path}")
+      @prompt.say("  See docs/RPO-RTO.md for setting a recovery SLA you can keep.")
     end
   end
 end
