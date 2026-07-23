@@ -40,6 +40,34 @@ destination** independently. Every run is recorded to a SQLite history that powe
   </picture>
 </p>
 
+## Backup guarantees
+
+An independent engineering review ([docs/ASSESSMENT.md](docs/ASSESSMENT.md)) rates PgKeeper
+a production-grade v1 for **scheduled, verifiable, encrypted logical backups with
+multi-destination redundancy**. In short:
+
+- **Verifiable** — the standout strength. Three escalating tiers, not a checkbox:
+  re-checksum the artifact, prove it's a readable archive, and (`--deep`) actually
+  restore it into a throwaway database with strict error handling — so a partially
+  corrupt dump *fails* verification instead of passing. A verified backup is also
+  protected from pruning. _A backup you have never restored is not a backup._
+- **Secure** — AES-256-GCM authenticated encryption **before** upload (clouds never see
+  plaintext), secrets kept in the environment (never inlined), and a dashboard that
+  refuses to boot without auth, compares credentials in constant time, binds to
+  `127.0.0.1`, gates every mutating action behind CSRF, and keeps restores CLI-only.
+- **Predictable** — flock-guarded runs, staging + atomic finalize (a crash never leaves a
+  half-written backup), wall-clock timeouts on every child process, a disk preflight that
+  refuses a dump it can't fit, pinned dependencies (`Gemfile.lock`), and backup-size
+  anomaly detection that flags a silently-shrinking dump.
+- **Redundant & assured** — independent fan-out to multiple destinations (one outage fails
+  only that destination), retention safety rails that never delete your only or newest
+  backup, plus a dead-man's switch, notifications, and Prometheus metrics.
+
+**Know the boundary:** PgKeeper takes logical dumps, **not** point-in-time recovery — your
+recovery point is your last completed dump, so your RPO is your backup interval. See
+[docs/RPO-RTO.md](docs/RPO-RTO.md) to set a recovery SLA you can keep, and pair with a PITR
+tool if you need minutes-or-seconds RPO.
+
 ## What works today
 
 - **`pgkeeper connect`** — an interactive onboarding wizard that connects a database and
