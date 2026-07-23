@@ -7,6 +7,16 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ### Added
 
+- **PITR Stage 2: WAL archiving (`pgkeeper wal`).** The continuous half of PITR —
+  ship completed WAL segments to storage and fetch them back for restore. Each
+  segment rides the same conveyor as dumps and base backups (compress → encrypt →
+  manifest → fan out), cataloged as `kind: wal`. New commands: `wal archive-file
+  PATH [NAME]` (the server's `archive_command` bridge, one segment), `wal archive
+  --spool DIR` (drain a `pg_receivewal` spool, deleting each segment only once it
+  is safely on every destination), and `wal fetch NAME DEST` (download → decrypt →
+  decompress — the counterpart a restore's `restore_command` calls, failing loudly
+  on a missing segment). The long-lived `pg_receivewal` supervisor is a focused
+  follow-up; this is the correct, tested data path it feeds.
 - **PITR Stage 1: `pgkeeper basebackup`.** Take a physical base backup of a PITR
   cluster with `pg_basebackup`, then run it through the same package → compress →
   encrypt → manifest → fan-out pipeline as logical dumps — PITR is just another
