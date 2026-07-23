@@ -186,6 +186,11 @@ module PgKeeper
       assert_includes body, "15 3 * * *", "the global daily 03:15 schedule renders its cron"
       assert_match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}Z/, body, "a next-run timestamp is shown")
       assert_includes body, "/schedule", "the Schedule nav link is present"
+      # Each row has a CSRF-guarded "Run now" form posting to the action endpoint.
+      assert_includes body, %(action="/actions/backup"), "the backup row can be run now"
+      assert_includes body, %(name="_csrf"), "run-now is CSRF-guarded"
+      assert_includes body, "Run now"
+      assert_includes body, "pgkConfirm", "run-now confirms before firing"
     end
 
     def test_schedule_page_shows_maintenance_verify_and_prune_jobs
@@ -211,6 +216,30 @@ module PgKeeper
       assert_includes body, "prune"
       assert_includes body, "--apply"
       assert_includes body, "0 5 * * *", "daily 05:00 prune cron"
+      # Run-now forms carry the flags that match each scheduled job.
+      assert_includes body, %(action="/actions/verify")
+      assert_includes body, %(name="deep" value="on"), "verify runs deep, matching the schedule"
+      assert_includes body, %(action="/actions/prune")
+      assert_includes body, %(name="apply" value="on"), "prune applies, matching the schedule"
+    end
+
+    def test_schedule_run_now_reaches_the_action_endpoint_with_matching_flags
+      maint = <<~YAML
+        maintenance:
+          prune:
+            schedule: daily at 05:00
+            apply: true
+      YAML
+      maint_app = Web::App.new(web_config(@dir, maint), logger: null_logger, actions: @actions)
+      session = Rack::Test::Session.new(maint_app)
+
+      # Mirror exactly what the Schedule page's prune "Run now" form submits.
+      session.post("/actions/prune", "_csrf" => maint_app.csrf_token, "confirm" => "on", "apply" => "on")
+
+      assert_equal 303, session.last_response.status
+      wait_for_jobs(maint_app)
+
+      assert_includes @actions.calls, [:prune, { apply: true }]
     end
 
     def test_schedule_page_reports_when_nothing_is_scheduled
