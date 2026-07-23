@@ -21,7 +21,7 @@
     <td class="mono"><a href="/runs/<%= h(run.run_id) %>"><%= h(run.run_id) %></a></td>
     <td><%= h(run.database) %></td>
     <td><%= status_pill(run.status) %></td>
-    <td title="<%= h(run.started_at) %>"><%= h(fmt_time(run.started_at)) %></td>
+    <td><%= tip(h(fmt_time(run.started_at)), run.started_at) %></td>
     <td><%= h(run.duration_seconds) %>s</td>
     <td><%= h(run.artifact_count) %></td>
     <td><%= h(human_size(run.total_bytes)) %></td>

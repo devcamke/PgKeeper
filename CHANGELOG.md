@@ -93,6 +93,15 @@ All notable changes to PgKeeper. Versions map to the milestones in
   auto-refreshes while a job is running. Field names and the POST contract are
   unchanged, so the CSRF/confirm guards and the JSON API behave exactly as
   before.
+- **Unified notices and tooltips across the dashboard.** One branded banner
+  family now renders every status message — the actions-page flash (colored by
+  severity, with a no-JavaScript dismiss link) and the retention/backups page
+  notes — each with an icon, a tinted surface, and a left accent. The bare OS
+  `title=` tooltips became styled, keyboard-reachable popovers that show the
+  exact timestamp on hover or focus; tables round their own corners now instead
+  of clipping, so a tooltip is never sheared off at a table edge. All motion
+  respects `prefers-reduced-motion`. Also read view templates as UTF-8
+  explicitly, so the dashboard renders correctly under a non-UTF-8 locale.
 
 ### Added
 
