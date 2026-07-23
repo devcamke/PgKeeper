@@ -97,6 +97,24 @@ module PgKeeper
         nil
       end
 
+      # Locate a whole backup set by destination name + database + label,
+      # returning [adapter, set] — or nil if no such set is cataloged. Backs the
+      # zip-everything download, and is allowlisted the same way {#find_artifact}
+      # is: the set (and thus its file paths) must come from the catalog.
+      def find_backup_set(destination_name, database, label)
+        @config.storage.each do |target|
+          adapter = Storage.build(target, logger: @logger)
+          next unless adapter.name == destination_name
+
+          set = Catalog.new(adapter).backup_sets(database: database)
+                       .find { |s| s.database == database && s.label == label }
+          return [adapter, set] if set
+        rescue EnvironmentError, StorageError
+          next
+        end
+        nil
+      end
+
       def api_status
         {
           "generated_at" => Time.now.utc.iso8601,

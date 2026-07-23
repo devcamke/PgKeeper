@@ -5,6 +5,8 @@ require "json"
 require "openssl"
 require "securerandom"
 require "tempfile"
+require "tmpdir"
+require "zip"
 
 require "pgkeeper/web/api"
 require "pgkeeper/web/view_helpers"
@@ -19,6 +21,9 @@ module PgKeeper
       include Api
 
       VIEWS = File.expand_path("views", __dir__)
+
+      # Read size when folding a downloaded file into a set zip.
+      ZIP_CHUNK = 1 << 20 # 1 MiB
 
       attr_reader :jobs, :csrf_token
 
@@ -60,6 +65,7 @@ module PgKeeper
         when "/retention" then page_retention
         when "/backups" then page_backups
         when "/download" then download(request)
+        when "/download-set" then download_set(request)
         when "/actions" then page_actions(request)
         else dispatch_get_data(request)
         end
@@ -208,6 +214,55 @@ module PgKeeper
           "content-type" => "application/octet-stream",
           "content-length" => size.to_s,
           "content-disposition" => %(attachment; filename="#{File.basename(path).gsub(/["\\]/, '')}")
+        }
+      end
+
+      # Stream every artifact in one backup set — each dump plus its manifest —
+      # zipped into a single download. Like {#download}, the set is resolved
+      # against the catalog, so only cataloged objects are ever served.
+      def download_set(request)
+        found = @dashboard.find_backup_set(
+          request.params["destination"].to_s,
+          request.params["database"].to_s,
+          request.params["timestamp"].to_s
+        )
+        return not_found if found.nil?
+
+        adapter, set = found
+        zip_path = build_set_zip(adapter, set)
+        [200, zip_headers("#{set.database}-#{set.label}.zip", File.size(zip_path)), FileBody.new(zip_path)]
+      end
+
+      # Download each of the set's files and stream them into a fresh zip, one
+      # entry per file (basenames are unique within a set). Each source is
+      # unlinked as soon as it is folded in, so only the finished zip lingers —
+      # and {FileBody} deletes that once the response is flushed.
+      def build_set_zip(adapter, set)
+        zip_path = File.join(Dir.tmpdir, "pgkeeper-set-#{SecureRandom.hex(8)}.zip")
+        ::Zip::File.open(zip_path, create: true) do |zip|
+          set.artifacts.flat_map { |a| [a.remote_path, a.manifest_path] }.compact.each do |remote_path|
+            stream_into_zip(zip, adapter, remote_path)
+          end
+        end
+        zip_path
+      end
+
+      def stream_into_zip(zip, adapter, remote_path)
+        tmp = Tempfile.create("pgkeeper-zip-src-")
+        tmp.close
+        adapter.download(remote_path, tmp.path)
+        zip.get_output_stream(File.basename(remote_path)) do |out|
+          File.open(tmp.path, "rb") { |io| out.write(io.read(ZIP_CHUNK)) until io.eof? }
+        end
+      ensure
+        File.unlink(tmp.path) if tmp
+      end
+
+      def zip_headers(filename, size)
+        {
+          "content-type" => "application/zip",
+          "content-length" => size.to_s,
+          "content-disposition" => %(attachment; filename="#{filename.gsub(/["\\]/, '')}")
         }
       end
 

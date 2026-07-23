@@ -4,6 +4,8 @@ require "test_helper"
 require "support/web_helpers"
 require "rack/test"
 require "json"
+require "zip"
+require "stringio"
 
 module PgKeeper
   # Request specs for the dashboard pages, the JSON API, CSRF enforcement, and
@@ -111,6 +113,8 @@ module PgKeeper
       assert_includes last_response.body, "2026-07-21T031500Z"
       assert_includes last_response.body, "structural", "verified tier is shown"
       assert_includes last_response.body, "/download?destination="
+      assert_includes last_response.body, "/download-set?destination=",
+                      "each set offers a zip-everything download"
     end
 
     def test_download_streams_cataloged_artifacts_only
@@ -128,6 +132,44 @@ module PgKeeper
       assert_equal 404, last_response.status, "paths outside the catalog must 404"
 
       get "/download", "destination" => "bogus", "path" => old
+
+      assert_equal 404, last_response.status, "unknown destinations must 404"
+    end
+
+    def test_download_set_zips_every_artifact_and_manifest_in_the_set
+      root = File.join(@dir, "backups")
+      started = Time.utc(2026, 7, 22, 3, 15)
+      # A database dump and its cluster globals share a timestamp → one set.
+      seed_backup(root, "app", started, kind: "database")
+      seed_backup(root, "app", started, kind: "globals")
+      destination = "local:#{root}"
+
+      get "/download-set", "destination" => destination, "database" => "app",
+                           "timestamp" => "2026-07-22T031500Z"
+
+      assert_equal 200, last_response.status
+      assert_equal "application/zip", last_response.headers["content-type"]
+      assert_match(/filename="app-2026-07-22T031500Z\.zip"/, last_response.headers["content-disposition"])
+
+      names = zip_entry_names(last_response.body)
+
+      assert_includes names, "app-2026-07-22T031500Z.dump"
+      assert_includes names, "app-2026-07-22T031500Z.dump#{Manifest::SUFFIX}"
+      assert_includes names, "app-globals-2026-07-22T031500Z.dump"
+      assert_includes names, "app-globals-2026-07-22T031500Z.dump#{Manifest::SUFFIX}"
+    end
+
+    def test_download_set_rejects_unknown_sets_and_destinations
+      seed_backups
+      destination = "local:#{File.join(@dir, 'backups')}"
+
+      get "/download-set", "destination" => destination, "database" => "app",
+                           "timestamp" => "1999-01-01T000000Z"
+
+      assert_equal 404, last_response.status, "an unknown timestamp must 404"
+
+      get "/download-set", "destination" => "bogus", "database" => "app",
+                           "timestamp" => "2026-07-21T031500Z"
 
       assert_equal 404, last_response.status, "unknown destinations must 404"
     end
@@ -247,6 +289,11 @@ module PgKeeper
     end
 
     private
+
+    # Entry names inside a zip delivered as a response body.
+    def zip_entry_names(bytes)
+      Zip::File.open_buffer(StringIO.new(bytes)).entries.map(&:name)
+    end
 
     # Drive a different App instance than the fixture (rack-test's `app` is
     # fixed per session).
