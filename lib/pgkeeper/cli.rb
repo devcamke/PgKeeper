@@ -71,6 +71,25 @@ module PgKeeper
       exit(ExitCode::FAILURE)
     end
 
+    desc "wal ACTION [ARGS]", "PITR WAL archiving: archive-file PATH [NAME] | archive --spool DIR | fetch NAME DEST"
+    method_option :cluster, type: :string, desc: "PITR cluster (default: the only one, if unambiguous)"
+    method_option :spool, type: :string, desc: "Spool directory (for `wal archive`)"
+    def wal(action, *args)
+      config = load_config
+      archiver = PITR::WalArchiver.new(config, resolve_pitr_cluster(config, options[:cluster]), logger: logger)
+      case action
+      when "archive-file" then wal_archive_file(archiver, args)
+      when "archive" then wal_archive_spool(archiver)
+      when "fetch" then wal_fetch(archiver, args)
+      else
+        say_error "unknown wal action #{action.inspect} (expected: archive-file, archive, fetch)", :red
+        exit(ExitCode::FAILURE)
+      end
+    rescue Error => e
+      say_error e.message, :red
+      exit(ExitCode::FAILURE)
+    end
+
     desc "destinations", "List configured storage destinations and the tokens that select them"
     def destinations
       config = load_config
@@ -327,6 +346,51 @@ module PgKeeper
         say ""
         summary = "#{checks.length} checks, #{failures} failing, #{warns} warning(s)"
         say summary, failures.zero? ? :green : :red
+      end
+
+      # Resolve the PITR cluster to act on: the named one, or the sole PITR
+      # cluster when there's exactly one and none was named.
+      def resolve_pitr_cluster(config, name)
+        clusters = config.pitr_clusters
+        if clusters.empty?
+          raise Error,
+                "no PITR clusters configured (add a `clusters:` entry with `pitr.enabled: true`)"
+        end
+
+        if name
+          cluster = config.cluster(name)
+          raise Error, "unknown or non-PITR cluster: #{name}" unless cluster&.pitr?
+
+          cluster
+        elsif clusters.length == 1
+          clusters.first
+        else
+          raise Error, "multiple PITR clusters configured; pass --cluster NAME"
+        end
+      end
+
+      def wal_archive_file(archiver, args)
+        path = args[0] or raise Error, "usage: pgkeeper wal archive-file PATH [NAME]"
+        name = args[1] || File.basename(path)
+        return say("archived #{name}", :green) if archiver.archive_file(path, name)
+
+        say_error "#{name}: not stored on every destination", :red
+        exit(ExitCode::PARTIAL)
+      end
+
+      def wal_archive_spool(archiver)
+        raise Error, "usage: pgkeeper wal archive --spool DIR" unless options[:spool]
+
+        count = archiver.archive_spool(options[:spool])
+        say "archived #{count} segment(s) from #{options[:spool]}", :green
+      end
+
+      def wal_fetch(archiver, args)
+        name, dest = args
+        raise Error, "usage: pgkeeper wal fetch NAME DEST" unless name && dest
+
+        archiver.fetch(name, dest)
+        say "fetched #{name} → #{dest}", :green
       end
 
       def print_report(report)
