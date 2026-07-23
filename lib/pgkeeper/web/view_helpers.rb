@@ -54,9 +54,70 @@ module PgKeeper
         "?"
       end
 
-      # A colored status dot with an accessible label.
-      def light_dot(color)
-        %(<span class="dot dot-#{h(color)}" title="#{h(color)}"></span>)
+      # Default human labels for a traffic-light color, shown in the dot's
+      # tooltip so hovering explains what the color means.
+      LIGHT_LABELS = { "green" => "Healthy", "yellow" => "Needs attention", "red" => "Failing" }.freeze
+
+      # A colored status dot with a branded tooltip. +label+ overrides the
+      # default word for the color.
+      def light_dot(color, label = nil)
+        text = label || LIGHT_LABELS.fetch(color.to_s, color.to_s)
+        tip(%(<span class="dot dot-#{h(color)}"></span>), text)
+      end
+
+      # Wrap +inner+ (already-safe HTML) in a branded tooltip trigger showing
+      # +hint+ on hover/focus. Returns +inner+ unchanged when there's no hint.
+      # The trigger is focusable and carries an aria-label so the hint reaches
+      # keyboard and screen-reader users, not just a mouse hover.
+      def tip(inner, hint)
+        return inner.to_s if hint.nil? || hint.to_s.empty?
+
+        %(<span class="tip" tabindex="0" role="note" aria-label="#{h(hint)}" ) +
+          %(data-tip="#{h(hint)}">#{inner}</span>)
+      end
+
+      # Inline icons for the notice/flash banners, keyed by severity. Stroked
+      # with currentColor so each inherits its notice's accent.
+      NOTICE_ICONS = {
+        ok: %(<path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="9"/>),
+        warn: %(<path d="M12 9v4M12 17h.01"/><path d="M10.3 4 2.6 18a1.5 1.5 0 0 0 1.3 2.2h16.2) +
+              %(a1.5 1.5 0 0 0 1.3-2.2L13.7 4a1.5 1.5 0 0 0-2.6 0Z"/>),
+        bad: %(<circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/>),
+        info: %(<circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/>)
+      }.freeze
+
+      # A branded notification banner. +kind+ is :ok/:warn/:bad/:info; when
+      # +dismiss+ is a URL, a close control links there (clearing the flash
+      # without any JavaScript).
+      def notice(message, kind: :info, dismiss: nil)
+        kind = kind.to_sym
+        glyph = NOTICE_ICONS.fetch(kind, NOTICE_ICONS[:info])
+        icon = %(<span class="notice-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ) +
+               %(stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">) +
+               %(#{glyph}</svg></span>)
+        body = %(<div class="notice-body">#{h(message)}</div>)
+        %(<div class="notice notice-#{kind}" role="status">#{icon}#{body}#{notice_close(dismiss)}</div>)
+      end
+
+      # The optional dismiss control — a plain link back to +url+ that drops the
+      # flash query param, so closing the banner needs no JavaScript.
+      CLOSE_ICON = %(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ) +
+                   %(stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>)
+
+      def notice_close(url)
+        return "" if url.nil?
+
+        %(<a class="notice-close" href="#{h(url)}" aria-label="Dismiss">#{CLOSE_ICON}</a>)
+      end
+
+      # Classify a flash message so the banner picks a fitting color. Defensive:
+      # anything unrecognized reads as neutral info.
+      def flash_kind(message)
+        text = message.to_s.downcase
+        return :warn if text.match?(/nothing was started|required|failed|error|denied/)
+        return :ok if text.match?(/\bstarted\b|queued|dispatched|complete/)
+
+        :info
       end
 
       def status_class(status)

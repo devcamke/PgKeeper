@@ -11,7 +11,7 @@ Set <span class="mono">retention:</span> in your config to enable pruning.</p>
 
 <h2>Next prune would delete</h2>
 <%- if @preview.deletions.empty? -%>
-<p class="ok">Nothing — every backup is within the retention policy.</p>
+<%= notice("Nothing — every backup is within the retention policy.", kind: :ok) %>
 <%- else -%>
 <table>
   <tr><th>Destination</th><th>Database</th><th>Backup</th><th>Size</th></tr>

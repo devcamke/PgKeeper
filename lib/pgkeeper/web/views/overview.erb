@@ -10,15 +10,15 @@
     <td><strong><%= h(row.name) %></strong></td>
     <%- if row.last_run -%>
     <td><span class="pill <%= status_class(row.last_run.status) %>"><a href="/runs/<%= h(row.last_run.run_id) %>"><%= h(row.last_run.status) %></a></span></td>
-    <td title="<%= h(row.last_run.started_at) %>"><%= h(human_age(row.last_run.started_at)) %></td>
+    <td><%= tip(h(human_age(row.last_run.started_at)), fmt_time(row.last_run.started_at)) %></td>
     <td><%= h(human_size(row.last_run.total_bytes)) %></td>
     <%- else -%>
     <td class="muted">never run</td><td class="muted">-</td><td class="muted">-</td>
     <%- end -%>
     <td><%= sparkline(row.size_trend) %></td>
     <%- if row.last_verified_at -%>
-    <td title="<%= h(fmt_time(row.last_verified_at)) %>">
-      <%= h(human_age(row.last_verified_at)) %> <span class="muted">(<%= h(row.verified_tier) %>)</span>
+    <td>
+      <%= tip(h(human_age(row.last_verified_at)), fmt_time(row.last_verified_at)) %> <span class="muted">(<%= h(row.verified_tier) %>)</span>
     </td>
     <%- else -%>
     <td><%= pill("never", "warn") %></td>
@@ -33,7 +33,7 @@
   <tr><th></th><th>Destination</th><th>Type</th><th>Backup sets</th><th>Total size</th><th>Detail</th></tr>
   <%- @destinations.each do |dest| -%>
   <tr>
-    <td><%= light_dot(dest.healthy ? "green" : "red") %></td>
+    <td><%= light_dot(dest.healthy ? "green" : "red", dest.healthy ? "Healthy" : "Unhealthy") %></td>
     <td class="mono"><%= h(dest.name) %></td>
     <td><%= h(dest.type) %></td>
     <td><%= dest.set_count %></td>
