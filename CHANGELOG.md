@@ -22,8 +22,10 @@ All notable changes to PgKeeper. Versions map to the milestones in
   job (backup, plus any `maintenance:` verify/prune) with its scope, human
   cadence, normalized cron, and the next three run times. It reads the same
   `Scheduler.entries` resolution the CLI and the cron/systemd installers use, so
-  the browser and the crontab never disagree. Read-only, matching the page's
-  intent — activation stays with `schedule install` / `daemon`.
+  the browser and the crontab never disagree. Each row also has a **Run now**
+  button that fires that job immediately with its scheduled flags (`--deep` /
+  `--apply`) through the existing CSRF- and lock-guarded action endpoints;
+  scheduled activation still lives with `schedule install` / `daemon`.
 - **Download a whole backup set as one zip (dashboard).** The Backups page
   listed a dump and its manifest as two separate links, so grabbing a complete
   backup meant several clicks per artifact — and more when a run also captured

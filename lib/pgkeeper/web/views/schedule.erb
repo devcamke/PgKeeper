@@ -5,7 +5,7 @@ config (or run <span class="mono">pgkeeper connect</span>), then a
 <span class="mono">maintenance:</span> block to schedule verify and prune too.</p>
 <%- else -%>
 <table>
-  <tr><th>Job</th><th>Scope</th><th>Schedule</th><th>Cron</th><th>Next runs (UTC)</th></tr>
+  <tr><th>Job</th><th>Scope</th><th>Schedule</th><th>Cron</th><th>Next runs (UTC)</th><th>Run</th></tr>
   <%- @plan.each do |row| -%>
   <tr>
     <td>
@@ -24,12 +24,46 @@ config (or run <span class="mono">pgkeeper connect</span>), then a
       <%- end -%>
       <%- end -%>
     </td>
+    <td>
+      <%- danger = row.action == "prune" && row.flags.include?("--apply") -%>
+      <form class="run-now" method="post" action="/actions/<%= u(row.action) %>"
+            onsubmit="return pgkConfirm(this, 'Run <%= h(([row.action] + row.flags).join(' ')) %> now?')">
+        <input type="hidden" name="_csrf" value="<%= h(@csrf_token) %>">
+        <%- if row.action == "backup" && row.only && row.only.length == 1 -%>
+        <input type="hidden" name="database" value="<%= h(row.only.first) %>">
+        <%- end -%>
+        <%- if row.action == "verify" && row.flags.include?("--deep") -%>
+        <input type="hidden" name="deep" value="on">
+        <%- end -%>
+        <%- if row.action == "prune" && row.flags.include?("--apply") -%>
+        <input type="hidden" name="apply" value="on">
+        <%- end -%>
+        <button type="submit" class="btn-run<%= danger ? ' danger' : '' %>">Run now</button>
+      </form>
+    </td>
   </tr>
   <%- end -%>
 </table>
 <p class="muted">This is the plan resolved from your config — the same one
-<span class="mono">pgkeeper schedule print</span> shows. It only fires once it's wired up:
+<span class="mono">pgkeeper schedule print</span> shows. It only fires on time once it's wired up:
 <span class="mono">pgkeeper schedule install</span> (crontab lines) or
 <span class="mono">--systemd</span> (timer units), or <span class="mono">pgkeeper daemon</span>
-in a container. To run a job right now, use the <a href="/actions">actions</a> page.</p>
+in a container. <strong>Run now</strong> triggers a job immediately through the same lock as a
+scheduled run — never a second concurrent pipeline — and lands you on the
+<a href="/actions">actions</a> page to watch it.</p>
+
+<script>
+  // One-click "Run now": confirm, then inject the confirmation the action
+  // endpoint requires. With JavaScript off the form still submits, but without
+  // that field — so the server rejects it and nothing runs (fails closed).
+  function pgkConfirm(form, message) {
+    if (!window.confirm(message)) return false;
+    var field = document.createElement("input");
+    field.type = "hidden";
+    field.name = "confirm";
+    field.value = "on";
+    form.appendChild(field);
+    return true;
+  }
+</script>
 <%- end -%>
