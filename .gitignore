@@ -4,7 +4,6 @@
 /tmp/
 /coverage/
 *.gem
-Gemfile.lock
 
 # Local runtime artifacts / secrets — never commit these.
 /pgkeeper.yml
