@@ -51,19 +51,4 @@ config (or run <span class="mono">pgkeeper connect</span>), then a
 in a container. <strong>Run now</strong> triggers a job immediately through the same lock as a
 scheduled run — never a second concurrent pipeline — and lands you on the
 <a href="/actions">actions</a> page to watch it.</p>
-
-<script>
-  // One-click "Run now": confirm, then inject the confirmation the action
-  // endpoint requires. With JavaScript off the form still submits, but without
-  // that field — so the server rejects it and nothing runs (fails closed).
-  function pgkConfirm(form, message) {
-    if (!window.confirm(message)) return false;
-    var field = document.createElement("input");
-    field.type = "hidden";
-    field.name = "confirm";
-    field.value = "on";
-    form.appendChild(field);
-    return true;
-  }
-</script>
 <%- end -%>

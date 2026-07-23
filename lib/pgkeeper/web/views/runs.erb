@@ -1,15 +1,22 @@
 <h1>Run timeline</h1>
-<form method="get" action="/runs">
-  <label>Database
-    <select name="database">
-      <option value="">(all)</option>
-      <%- @database_names.each do |name| -%>
-      <option value="<%= h(name) %>" <%= @database == name ? "selected" : "" %>><%= h(name) %></option>
-      <%- end -%>
-    </select>
-  </label>
-  <button type="submit">Filter</button>
-</form>
+<div class="toolbar">
+  <form method="get" action="/runs">
+    <label>Database
+      <select name="database">
+        <option value="">(all)</option>
+        <%- @database_names.each do |name| -%>
+        <option value="<%= h(name) %>" <%= @database == name ? "selected" : "" %>><%= h(name) %></option>
+        <%- end -%>
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+  <form class="run-now" method="post" action="/actions/backup"
+        onsubmit="return pgkConfirm(this, 'Run a backup of all databases now?')">
+    <input type="hidden" name="_csrf" value="<%= h(@csrf_token) %>">
+    <button type="submit" class="btn-run">Run backup now</button>
+  </form>
+</div>
 <%- if @runs.empty? -%>
 <p class="muted">No runs recorded<%= @database ? " for #{h(@database)}" : "" %>.</p>
 <%- else -%>
