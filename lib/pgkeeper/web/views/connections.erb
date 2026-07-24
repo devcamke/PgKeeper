@@ -1,0 +1,166 @@
+<h1>Connections</h1>
+<%- if @message -%>
+<%= notice(@message, kind: flash_kind(@message), dismiss: "/connections") %>
+<%- end -%>
+<p class="lead">Everything PgKeeper talks to — the databases it dumps, the PITR clusters it
+streams WAL from, and the storage destinations it fans out to. Database and cluster probes run
+live as this page loads: a bounded <span class="mono">SELECT version()</span> round-trip with
+exactly the libpq settings a real run would use. Credentials stay in
+<span class="mono">pgkeeper.yml</span> and are never shown here.</p>
+
+<div class="stat-grid">
+  <div class="stat <%= @databases.all?(&:ok) ? 'ok' : 'bad' %>">
+    <div class="stat-value"><%= @databases.count(&:ok) %><span class="stat-of">/<%= @databases.length %></span></div>
+    <div class="stat-label">Databases reachable</div>
+  </div>
+  <%- unless @clusters.empty? -%>
+  <div class="stat <%= @clusters.all?(&:ok) ? 'ok' : 'bad' %>">
+    <div class="stat-value"><%= @clusters.count(&:ok) %><span class="stat-of">/<%= @clusters.length %></span></div>
+    <div class="stat-label">PITR clusters reachable</div>
+  </div>
+  <%- end -%>
+  <div class="stat <%= @destinations.all?(&:healthy) ? 'ok' : 'bad' %>">
+    <div class="stat-value"><%= @destinations.count(&:healthy) %><span class="stat-of">/<%= @destinations.length %></span></div>
+    <div class="stat-label">Destinations healthy</div>
+  </div>
+</div>
+
+<h2>Databases</h2>
+<table>
+  <tr>
+    <th></th><th>Name</th><th>Endpoint</th><th>User</th><th>TLS</th><th>Auth</th>
+    <th>Status</th><th>Server</th><th>Round trip</th>
+  </tr>
+  <%- @databases.each do |row| -%>
+  <tr>
+    <td><%= light_dot(row.light, row.ok ? "Connected" : "Unreachable") %></td>
+    <td><strong><%= h(row.name) %></strong></td>
+    <td class="mono"><%= h(row.endpoint) %></td>
+    <td class="mono"><%= row.username ? h(row.username) : '<span class="muted">libpq default</span>' %></td>
+    <td class="mono"><%= row.sslmode ? h(row.sslmode) : '<span class="muted">default</span>' %></td>
+    <td class="muted"><%= h(row.auth) %></td>
+    <td><%= pill(row.ok ? "connected" : "failed", row.ok ? "ok" : "bad") %></td>
+    <td class="<%= row.ok ? '' : 'bad' %>"><%= h(row.ok ? row.server_version : row.error) %></td>
+    <td><%= row.latency_ms ? "#{row.latency_ms} ms" : '<span class="muted">-</span>' %></td>
+  </tr>
+  <%- end -%>
+</table>
+
+<h2>Add a database</h2>
+<%- if @editable -%>
+<form class="action-card add-db" method="post" action="/connections/add">
+  <div class="action-head">
+    <span class="action-icon accent">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3"/><path d="M17 14v6M14 17h6"/>
+      </svg>
+    </span>
+    <div>
+      <h3>Probe &amp; add to <span class="mono"><%= h(@config_path) %></span></h3>
+      <p>The connection is tested first — with exactly these settings — and only written if it
+      succeeds. The password is used for the probe only: the file gets an
+      <span class="mono">ENV</span> reference, never the secret. PgKeeper reads config at
+      startup, so restart it after adding.</p>
+    </div>
+  </div>
+  <input type="hidden" name="_csrf" value="<%= h(@csrf_token) %>">
+  <div class="form-grid">
+    <div class="field">
+      <label class="field-label" for="add-name">Name <span class="muted">— used in backups, history, and the env-var name</span></label>
+      <input type="text" id="add-name" name="name" required pattern="[A-Za-z0-9_.\-]+" placeholder="app_production">
+    </div>
+    <div class="field">
+      <label class="field-label" for="add-host">Host</label>
+      <input type="text" id="add-host" name="host" placeholder="localhost">
+    </div>
+    <div class="field">
+      <label class="field-label" for="add-port">Port</label>
+      <input type="text" id="add-port" name="port" inputmode="numeric" placeholder="5432">
+    </div>
+    <div class="field">
+      <label class="field-label" for="add-database">Database <span class="muted">— defaults to the name</span></label>
+      <input type="text" id="add-database" name="database" placeholder="">
+    </div>
+    <div class="field">
+      <label class="field-label" for="add-username">Username</label>
+      <input type="text" id="add-username" name="username" placeholder="postgres">
+    </div>
+    <div class="field">
+      <label class="field-label" for="add-password">Password <span class="muted">— blank uses .pgpass / ambient credentials</span></label>
+      <input type="password" id="add-password" name="password" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label class="field-label" for="add-sslmode">TLS (sslmode)</label>
+      <select id="add-sslmode" name="sslmode">
+        <option value="">libpq default</option>
+        <option value="disable">disable</option>
+        <option value="allow">allow</option>
+        <option value="prefer">prefer</option>
+        <option value="require">require</option>
+        <option value="verify-ca">verify-ca</option>
+        <option value="verify-full">verify-full</option>
+      </select>
+    </div>
+  </div>
+  <div class="action-foot">
+    <label class="switch"><input type="checkbox" name="confirm"><span class="slider"></span><span class="switch-label">Confirm</span></label>
+    <span class="btn-row">
+      <button type="submit" class="ghost" formaction="/connections/test" formnovalidate
+              title="Probe with these settings — writes nothing, no confirmation needed">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2 6 4-12 2 6h6"/></svg>
+        Test connection
+      </button>
+      <button type="submit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        Probe &amp; add
+      </button>
+    </span>
+  </div>
+</form>
+<%- else -%>
+<p class="muted">Adding from the web is disabled: the loaded config
+(<span class="mono"><%= h(@config_path) %></span>) is not an editable file from this process.
+Add databases with <span class="mono">pgkeeper connect</span> or by editing the file directly.</p>
+<%- end -%>
+
+<%- unless @clusters.empty? -%>
+<h2>PITR clusters</h2>
+<table>
+  <tr>
+    <th></th><th>Name</th><th>Endpoint</th><th>User</th><th>TLS</th><th>Auth</th>
+    <th>Status</th><th>Server</th><th>Round trip</th>
+  </tr>
+  <%- @clusters.each do |row| -%>
+  <tr>
+    <td><%= light_dot(row.light, row.ok ? "Connected" : "Unreachable") %></td>
+    <td><strong><%= h(row.name) %></strong></td>
+    <td class="mono"><%= h(row.endpoint) %></td>
+    <td class="mono"><%= row.username ? h(row.username) : '<span class="muted">libpq default</span>' %></td>
+    <td class="mono"><%= row.sslmode ? h(row.sslmode) : '<span class="muted">default</span>' %></td>
+    <td class="muted"><%= h(row.auth) %></td>
+    <td><%= pill(row.ok ? "connected" : "failed", row.ok ? "ok" : "bad") %></td>
+    <td class="<%= row.ok ? '' : 'bad' %>"><%= h(row.ok ? row.server_version : row.error) %></td>
+    <td><%= row.latency_ms ? "#{row.latency_ms} ms" : '<span class="muted">-</span>' %></td>
+  </tr>
+  <%- end -%>
+</table>
+<%- end -%>
+
+<h2>Storage destinations</h2>
+<table>
+  <tr><th></th><th>Destination</th><th>Type</th><th>Backup sets</th><th>Total size</th><th>Detail</th></tr>
+  <%- @destinations.each do |dest| -%>
+  <tr>
+    <td><%= light_dot(dest.healthy ? "green" : "red", dest.healthy ? "Healthy" : "Unhealthy") %></td>
+    <td class="mono"><%= h(dest.name) %></td>
+    <td><%= h(dest.type) %></td>
+    <td><%= dest.set_count %></td>
+    <td><%= h(human_size(dest.total_bytes)) %></td>
+    <td class="<%= dest.healthy ? 'muted' : 'bad' %>"><%= h(dest.error || "healthy") %></td>
+  </tr>
+  <%- end -%>
+</table>
+
+<p class="muted">Storage health comes from each adapter's own healthcheck — the same probe
+<span class="mono">pgkeeper doctor</span> runs. For the full environment check (tools, versions,
+config), run <a href="/actions">doctor</a> from the Actions page. Reload this page to probe again.</p>

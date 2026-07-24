@@ -12,6 +12,8 @@ require "pgkeeper/web/health"
 require "pgkeeper/web/jobs"
 require "pgkeeper/web/actions"
 require "pgkeeper/web/dashboard"
+require "pgkeeper/web/connections"
+require "pgkeeper/web/database_admin"
 require "pgkeeper/web/app"
 
 module PgKeeper

@@ -143,10 +143,21 @@ exposes backup metadata and management actions — treat it like any admin UI:
   credential in cleartext.
 - **CSRF-protected.** Every browser management POST requires a CSRF token plus
   an explicit confirmation, and runs through the same lock as scheduled runs.
+  (One deliberate exception to the confirmation — not the CSRF token: the
+  Connections page's read-only "test connection" probe, which starts nothing
+  and writes nothing.)
   The token-authenticated action API skips those browser-only guards because a
   Bearer header can't ride along on a cross-site request in the first place.
 - **Downloads are allowlisted.** The download endpoint only serves paths the
   destination's catalog knows about — it cannot be steered at arbitrary files.
+- **Config writes are browser-only and probe-gated.** The one config-mutating
+  flow (adding a database from the Connections page) requires the CSRF token
+  plus confirmation, is deliberately absent from the Bearer-token API (a
+  leaked API token can trigger backups, not rewrite where they point), tests
+  the connection before writing, and never persists the submitted password —
+  the file gets an `<%= ENV["PGKEEPER_<NAME>_PASSWORD"] %>` reference, the
+  same secrets-in-the-environment rule the wizard follows. The updated file is
+  re-validated as a whole before it replaces the old one (atomic rename).
 - **No restores.** Restore-from-browser is deliberately not implemented; a
   restore is too destructive for a web click. Use the CLI runbook
   ([RESTORE.md](RESTORE.md)).

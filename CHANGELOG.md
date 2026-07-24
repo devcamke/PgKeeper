@@ -5,6 +5,33 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ## Unreleased
 
+### Added
+
+- **Web interface refresh, with a new Connections page.** The dashboard gains
+  a **Connections** page (`/connections`): every endpoint PgKeeper talks to —
+  databases, PITR clusters, and storage destinations — probed live on page
+  load with the same bounded `SELECT version()` round-trip `pgkeeper doctor`
+  uses. Each row shows the endpoint, user, TLS mode, auth *source*, server
+  version, and round-trip latency; credentials are never rendered. Probes run
+  concurrently, so one unreachable host costs a single connect timeout, not
+  the sum of them. The same data is machine-readable at
+  `GET /api/connections`. Alongside it, the interface picks up an orange
+  brand palette (tuned separately for light and dark themes), at-a-glance
+  stat tiles, a brand mark that links home, keyboard focus outlines on the
+  nav, and a footer showing the running version.
+- **Databases can now be added from the web.** The Connections page grows a
+  "Probe & add" form: the submitted details are validated and probed (bounded
+  connect deadline), and only on success is the entry spliced into
+  `pgkeeper.yml` — via the wizard's targeted text surgery, so comments and
+  ERB interpolations survive. The password is used for the probe only; the
+  file gets a `PGKEEPER_<NAME>_PASSWORD` ENV reference, and the updated
+  config is re-validated in full before the atomic write. Browser-only by
+  design (CSRF + confirm; not on the Bearer API). PgKeeper reads config at
+  boot, so the flash reminds you to export the env var and restart. A
+  "Test connection" button probes the same form's settings and reports server
+  version + latency without writing anything (CSRF-gated, but exempt from the
+  confirmation toggle since it mutates nothing).
+
 ### Fixed
 
 Every critical/high finding from the July 2026 engineering review

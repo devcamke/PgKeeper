@@ -4,33 +4,32 @@ require "erb"
 require "json"
 require "openssl"
 require "securerandom"
-require "tempfile"
-require "tmpdir"
-require "zip"
 
 require "pgkeeper/web/api"
+require "pgkeeper/web/downloads"
 require "pgkeeper/web/view_helpers"
 
 module PgKeeper
   module Web
     # The dashboard's Rack application: routing, CSRF enforcement, page
-    # rendering (stdlib ERB), the JSON API, and the catalog-allowlisted
-    # artifact download endpoint. Authentication happens before any request
-    # reaches this class — see {Auth}.
+    # rendering (stdlib ERB), the JSON API ({Api}), and the
+    # catalog-allowlisted artifact download endpoints ({Downloads}).
+    # Authentication happens before any request reaches this class —
+    # see {Auth}.
     class App
       include Api
+      include Downloads
 
       VIEWS = File.expand_path("views", __dir__)
 
-      # Read size when folding a downloaded file into a set zip.
-      ZIP_CHUNK = 1 << 20 # 1 MiB
-
       attr_reader :jobs, :csrf_token
 
-      def initialize(config, logger: PgKeeper.logger, actions: nil)
+      def initialize(config, logger: PgKeeper.logger, actions: nil, connections: nil)
         @config = config
         @logger = logger
         @dashboard = Dashboard.new(config, logger: logger)
+        @connections = connections || Connections.new(config, logger: logger)
+        @database_admin = DatabaseAdmin.new(config, connections: @connections, logger: logger)
         @actions = actions || Actions.new(config, logger: logger)
         @jobs = Jobs.new(logger: logger)
         # One CSRF token per app boot: rotating per-request would need session
@@ -62,12 +61,19 @@ module PgKeeper
         when "/" then page_overview
         when "/runs" then page_runs(request)
         when %r{\A/runs/([^/]+)\z} then page_run(Regexp.last_match(1))
+        when "/connections" then page_connections(request)
         when "/retention" then page_retention
         when "/schedule" then page_schedule
         when "/backups" then page_backups
+        when "/actions" then page_actions(request)
+        else dispatch_get_download(request)
+        end
+      end
+
+      def dispatch_get_download(request)
+        case request.path_info
         when "/download" then download(request)
         when "/download-set" then download_set(request)
-        when "/actions" then page_actions(request)
         else dispatch_get_data(request)
         end
       end
@@ -79,6 +85,7 @@ module PgKeeper
         when "/api/status" then json_response(@dashboard.api_status)
         when "/api/runs" then api_runs(request)
         when "/api/destinations" then json_response(api_destinations)
+        when "/api/connections" then json_response(api_connections)
         when "/api/jobs" then json_response({ "jobs" => @jobs.all.map { |j| job_json(j) } })
         when %r{\A/api/jobs/(\d+)\z} then api_job_status(Regexp.last_match(1).to_i)
         when "/metrics" then metrics_response
@@ -100,16 +107,37 @@ module PgKeeper
       def dispatch_post(request)
         return dispatch_api_post(request) if request.path_info.start_with?("/api/")
 
-        return forbidden("invalid or missing CSRF token") unless csrf_ok?(request)
-        return redirect_msg("confirmation checkbox is required — nothing was started") unless confirmed?(request)
+        rejection = browser_post_guard(request)
+        return rejection if rejection
 
         @logger.info("dashboard action requested", caller: caller_name(request), action: request.path_info)
+        return dispatch_post_connections(request) if request.path_info.start_with?("/connections/")
+
         case request.path_info
         when "/actions/backup" then act_backup(request)
         when "/actions/verify" then act_verify(request)
         when "/actions/prune" then act_prune(request)
         when "/actions/test-notification" then act("test-notification") { @actions.test_notification }
         when "/actions/doctor" then act("doctor") { @actions.doctor }
+        else not_found
+        end
+      end
+
+      # The browser-POST gates: CSRF for everything; the confirmation checkbox
+      # for everything except the connection test, which starts nothing and
+      # writes nothing. Returns the rejection response, or nil to proceed.
+      def browser_post_guard(request)
+        return forbidden("invalid or missing CSRF token") unless csrf_ok?(request)
+        return nil if request.path_info == "/connections/test" || confirmed?(request)
+
+        redirect_msg("confirmation checkbox is required — nothing was started",
+                     path: flash_path(request))
+      end
+
+      def dispatch_post_connections(request)
+        case request.path_info
+        when "/connections/add" then act_add_database(request)
+        when "/connections/test" then act_test_connection(request)
         else not_found
         end
       end
@@ -138,6 +166,29 @@ module PgKeeper
         return not_found if rows.empty?
 
         html render_view("run", title: "Run #{run_id}", run_id: run_id, rows: rows)
+      end
+
+      def page_connections(request)
+        html render_view("connections", title: "Connections",
+                                        message: presence(request.params["msg"]),
+                                        databases: @connections.database_rows,
+                                        clusters: @connections.cluster_rows,
+                                        destinations: @dashboard.destination_rows,
+                                        editable: @database_admin.editable?,
+                                        config_path: @config.source)
+      end
+
+      # Browser-only by design (CSRF + confirm; not on the Bearer API): probe
+      # the submitted details, then append the entry to the config file — see
+      # {DatabaseAdmin} for the full posture.
+      def act_add_database(request)
+        result = @database_admin.add(request.params)
+        redirect_msg(result.message, path: "/connections")
+      end
+
+      def act_test_connection(request)
+        result = @database_admin.test(request.params)
+        redirect_msg(result.message, path: "/connections")
       end
 
       def page_retention
@@ -199,103 +250,6 @@ module PgKeeper
         redirect_msg("started #{action} (job ##{job.id})")
       end
 
-      # -- download ----------------------------------------------------------
-
-      # Stream one artifact (or manifest) to the browser. The path must name an
-      # object the destination's catalog knows about — arbitrary paths 404.
-      def download(request)
-        found = @dashboard.find_artifact(request.params["destination"].to_s, request.params["path"].to_s)
-        return not_found if found.nil?
-
-        adapter, _artifact = found
-        path = request.params["path"].to_s
-        tmp = Tempfile.create("pgkeeper-download-")
-        tmp.close
-        adapter.download(path, tmp.path)
-        [200, download_headers(path, File.size(tmp.path)), FileBody.new(tmp.path)]
-      end
-
-      def download_headers(path, size)
-        {
-          "content-type" => "application/octet-stream",
-          "content-length" => size.to_s,
-          "content-disposition" => %(attachment; filename="#{File.basename(path).gsub(/["\\]/, '')}")
-        }
-      end
-
-      # Stream every artifact in one backup set — each dump plus its manifest —
-      # zipped into a single download. Like {#download}, the set is resolved
-      # against the catalog, so only cataloged objects are ever served.
-      def download_set(request)
-        found = @dashboard.find_backup_set(
-          request.params["destination"].to_s,
-          request.params["database"].to_s,
-          request.params["timestamp"].to_s
-        )
-        return not_found if found.nil?
-
-        adapter, set = found
-        zip_path = build_set_zip(adapter, set)
-        [200, zip_headers("#{set.database}-#{set.label}.zip", File.size(zip_path)), FileBody.new(zip_path)]
-      end
-
-      # Download each of the set's files and stream them into a fresh zip, one
-      # entry per file (basenames are unique within a set). Each source is
-      # unlinked as soon as it is folded in, so only the finished zip lingers —
-      # and {FileBody} deletes that once the response is flushed.
-      def build_set_zip(adapter, set)
-        zip_path = File.join(Dir.tmpdir, "pgkeeper-set-#{SecureRandom.hex(8)}.zip")
-        ::Zip::File.open(zip_path, create: true) do |zip|
-          set.artifacts.flat_map { |a| [a.remote_path, a.manifest_path] }.compact.each do |remote_path|
-            stream_into_zip(zip, adapter, remote_path)
-          end
-        end
-        zip_path
-      end
-
-      def stream_into_zip(zip, adapter, remote_path)
-        tmp = Tempfile.create("pgkeeper-zip-src-")
-        tmp.close
-        adapter.download(remote_path, tmp.path)
-        zip.get_output_stream(File.basename(remote_path)) do |out|
-          File.open(tmp.path, "rb") { |io| out.write(io.read(ZIP_CHUNK)) until io.eof? }
-        end
-      ensure
-        File.unlink(tmp.path) if tmp
-      end
-
-      def zip_headers(filename, size)
-        {
-          "content-type" => "application/zip",
-          "content-length" => size.to_s,
-          "content-disposition" => %(attachment; filename="#{filename.gsub(/["\\]/, '')}")
-        }
-      end
-
-      # Rack body that streams a temp file in chunks and deletes it when the
-      # server closes the response, so multi-GB dumps never load into memory.
-      class FileBody
-        CHUNK = 64 * 1024
-
-        def initialize(path)
-          @path = path
-        end
-
-        def each
-          File.open(@path, "rb") do |io|
-            while (chunk = io.read(CHUNK))
-              yield chunk
-            end
-          end
-        end
-
-        def close
-          File.unlink(@path)
-        rescue StandardError
-          nil
-        end
-      end
-
       # -- plumbing ----------------------------------------------------------
 
       def csrf_ok?(request)
@@ -344,8 +298,14 @@ module PgKeeper
         [status, { "content-type" => "application/json" }, [JSON.generate(payload)]]
       end
 
-      def redirect_msg(message)
-        [303, { "location" => "/actions?msg=#{Rack::Utils.escape(message)}" }, []]
+      def redirect_msg(message, path: "/actions")
+        [303, { "location" => "#{path}?msg=#{Rack::Utils.escape(message)}" }, []]
+      end
+
+      # Which page a POST's flash should land on: forms under /connections
+      # flash there, everything else on the Actions page.
+      def flash_path(request)
+        request.path_info.start_with?("/connections") ? "/connections" : "/actions"
       end
 
       def not_found

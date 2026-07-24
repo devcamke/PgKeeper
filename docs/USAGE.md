@@ -324,6 +324,12 @@ the token as the password**); scripts send `Authorization: Bearer <token>`.
 Pages: **Overview** (per-database traffic lights, last verified age, next
 run, size-trend sparklines, destination health), **Runs** (timeline + per-run
 detail with stderr on failures), **Backups** (browse and download artifacts),
+**Connections** (every endpoint PgKeeper talks to, probed live on page load —
+databases, PITR clusters, and storage destinations, with server version and
+round-trip latency; credentials never shown. Also tests a connection on
+demand and adds a database to `pgkeeper.yml` from the browser: the connection
+is probed first, the password lands as an `ENV` reference — export it and
+restart pgkeeper to load the entry),
 **Retention** (exactly what the next prune deletes), **Actions** (trigger
 backup / verify / prune / test-notification / doctor — with a per-destination
 picker on backup — each behind a confirmation, running through the same lock as

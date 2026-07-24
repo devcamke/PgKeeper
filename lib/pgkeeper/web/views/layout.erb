@@ -14,8 +14,9 @@
     --border-strong: #d3d9e2;
     --text: #1b2330;
     --muted: #667085;
-    --accent: #2f6fed;
-    --accent-weak: #2f6fed14;
+    --accent: #d9530b;
+    --accent-weak: #d9530b16;
+    --accent-fg: #ffffff;
     --ok: #15925a; --ok-bg: #15925a1a;
     --warn: #b7791f; --warn-bg: #b7791f1f;
     --bad: #d64545; --bad-bg: #d6454518;
@@ -33,8 +34,9 @@
       --border-strong: #333c48;
       --text: #e6edf3;
       --muted: #97a2b0;
-      --accent: #6b8afd;
-      --accent-weak: #6b8afd1f;
+      --accent: #fb923c;
+      --accent-weak: #fb923c1f;
+      --accent-fg: #251304;
       --ok: #3fb950; --ok-bg: #3fb95022;
       --warn: #d6a441; --warn-bg: #d6a44122;
       --bad: #f27272; --bad-bg: #f2727222;
@@ -62,9 +64,12 @@
   header .brand {
     display: inline-flex; align-items: center; gap: 0.55rem;
     font-weight: 700; font-size: 1.08rem; letter-spacing: -0.01em;
+    color: var(--text); text-decoration: none;
   }
+  header .brand:hover { text-decoration: none; color: var(--accent); }
   header .brand svg { display: block; }
   nav { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+  nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   nav a {
     padding: 0.35rem 0.8rem; border-radius: 8px; font-size: 0.92rem;
     text-decoration: none; color: var(--muted); font-weight: 500;
@@ -187,22 +192,30 @@
   button, .btn {
     display: inline-flex; align-items: center; gap: 0.4rem;
     padding: 0.5rem 1.1rem; border-radius: 8px; border: none; cursor: pointer;
-    background: var(--accent); color: #fff; font-weight: 600; font-size: 0.9rem;
+    background: var(--accent); color: var(--accent-fg); font-weight: 600; font-size: 0.9rem;
     font-family: inherit; text-decoration: none; transition: filter 0.12s, transform 0.05s;
   }
   button:hover, .btn:hover { filter: brightness(1.07); text-decoration: none; }
   button:active, .btn:active { transform: translateY(1px); }
   button.danger, .btn.danger { background: var(--bad); }
+  /* Secondary button: outlined, for the harmless sibling of a primary action. */
+  button.ghost, .btn.ghost {
+    background: transparent; color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  button.ghost:hover, .btn.ghost:hover { background: var(--accent-weak); filter: none; }
+  .btn-row { display: inline-flex; gap: 0.5rem; flex-wrap: wrap; }
   button svg, .btn svg { width: 1rem; height: 1rem; }
   .run-now { display: inline; margin: 0; }
   .btn-run { padding: 0.3rem 0.75rem; font-size: 0.8rem; border-radius: 6px; }
   .toolbar { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
   .toolbar form { margin: 0; }
 
-  select, input[type="text"] {
+  select, input[type="text"], input[type="password"] {
     padding: 0.35rem 0.55rem; border-radius: 7px; border: 1px solid var(--border-strong);
     background: var(--surface); color: var(--text); font-family: inherit; font-size: 0.88rem;
   }
+  input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   input[type="checkbox"] { accent-color: var(--accent); width: 0.95rem; height: 0.95rem; vertical-align: -2px; }
 
   a { color: var(--accent); text-decoration: none; }
@@ -244,6 +257,15 @@
   .field { margin: 0.6rem 0; }
   .field-label { display: block; font-size: 0.78rem; font-weight: 600; margin: 0 0 0.35rem; color: var(--text); }
   .field select { width: 100%; }
+  .field input { width: 100%; }
+
+  /* The add-a-database form: a lone action card with a field grid inside. */
+  .add-db { max-width: 46rem; margin-bottom: 1rem; }
+  .add-db .form-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 0 1.1rem;
+  }
+  .add-db .field-label .muted { font-weight: 500; }
 
   .chip-set { display: flex; flex-wrap: wrap; gap: 0.4rem; }
   .chip {
@@ -281,6 +303,35 @@
   .switch input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
   .switch-label { font-size: 0.82rem; color: var(--muted); }
 
+  /* Stat tiles — the at-a-glance counters at the top of the Connections page. */
+  .stat-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 1rem; margin: 0 0 1.75rem;
+  }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 0.85rem 1.1rem; box-shadow: var(--shadow);
+    position: relative; overflow: hidden;
+  }
+  .stat::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--border-strong); }
+  .stat.ok::before { background: var(--ok); }
+  .stat.bad::before { background: var(--bad); }
+  .stat-value { font-size: 1.55rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+  .stat.ok .stat-value { color: var(--ok); }
+  .stat.bad .stat-value { color: var(--bad); }
+  .stat-of { font-size: 0.95rem; font-weight: 600; color: var(--muted); }
+  .stat-label {
+    margin-top: 0.15rem; font-size: 0.72rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+  }
+
+  footer {
+    max-width: 74rem; margin: 0 auto; padding: 0 1.5rem 2rem;
+    display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+    color: var(--muted); font-size: 0.78rem;
+  }
+  footer a { color: inherit; }
+
   /* Remote-trigger panel */
   .panel {
     background: var(--surface); border: 1px solid var(--border);
@@ -294,18 +345,19 @@
 </head>
 <body>
 <header>
-  <span class="brand">
+  <a class="brand" href="/">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <ellipse cx="12" cy="5.5" rx="7.5" ry="3" fill="var(--accent)"/>
       <path d="M4.5 5.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6" stroke="var(--accent)" stroke-width="2" fill="none"/>
       <path d="M4.5 11.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6" stroke="var(--accent)" stroke-width="2" fill="none" opacity="0.55"/>
     </svg>
     PgKeeper
-  </span>
+  </a>
   <nav>
     <a href="/" class="<%= @active == 'overview' ? 'active' : '' %>">Overview</a>
     <a href="/runs" class="<%= @active == 'runs' || @active == 'run' ? 'active' : '' %>">Runs</a>
     <a href="/backups" class="<%= @active == 'backups' ? 'active' : '' %>">Backups</a>
+    <a href="/connections" class="<%= @active == 'connections' ? 'active' : '' %>">Connections</a>
     <a href="/retention" class="<%= @active == 'retention' ? 'active' : '' %>">Retention</a>
     <a href="/schedule" class="<%= @active == 'schedule' ? 'active' : '' %>">Schedule</a>
     <a href="/actions" class="<%= @active == 'actions' ? 'active' : '' %>">Actions</a>
@@ -314,6 +366,10 @@
 <main>
 <%= @content %>
 </main>
+<footer>
+  <span>PgKeeper v<%= h(PgKeeper::VERSION) %></span>
+  <span>Rendered <%= h(Time.now.utc.strftime("%Y-%m-%d %H:%M:%SZ")) %> · <a href="/api/status">JSON API</a></span>
+</footer>
 <script>
   // Shared "Run now" guard: confirm, then inject the confirmation the action
   // endpoints require. With JavaScript off the form submits without that field,
