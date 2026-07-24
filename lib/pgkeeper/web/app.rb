@@ -7,6 +7,7 @@ require "securerandom"
 
 require "pgkeeper/web/api"
 require "pgkeeper/web/downloads"
+require "pgkeeper/web/schedule_pages"
 require "pgkeeper/web/view_helpers"
 
 module PgKeeper
@@ -19,6 +20,7 @@ module PgKeeper
     class App
       include Api
       include Downloads
+      include SchedulePages
 
       VIEWS = File.expand_path("views", __dir__)
 
@@ -42,6 +44,7 @@ module PgKeeper
         @dashboard = Dashboard.new(config, logger: logger)
         @connections = connections || Connections.new(config, logger: logger)
         @database_admin = DatabaseAdmin.new(config, connections: @connections, logger: logger)
+        @schedule_admin = ScheduleAdmin.new(config, logger: logger)
         @actions = actions || Actions.new(config, logger: logger)
         @jobs = Jobs.new(logger: logger)
         # One CSRF token per app boot: rotating per-request would need session
@@ -75,7 +78,7 @@ module PgKeeper
         when %r{\A/runs/([^/]+)\z} then page_run(Regexp.last_match(1))
         when "/connections" then page_connections(request)
         when "/retention" then page_retention
-        when "/schedule" then page_schedule
+        when "/schedule" then page_schedule(request)
         when "/logs" then page_logs(request)
         when "/backups" then page_backups(request)
         when "/actions" then page_actions(request)
@@ -127,6 +130,7 @@ module PgKeeper
         return dispatch_post_connections(request) if request.path_info.start_with?("/connections/")
 
         case request.path_info
+        when "/schedule/set" then act_set_schedule(request)
         when "/actions/backup" then act_backup(request)
         when "/actions/verify" then act_verify(request)
         when "/actions/prune" then act_prune(request)
@@ -213,10 +217,6 @@ module PgKeeper
         html render_view("retention", title: "Retention",
                                       policy: @config.retention,
                                       preview: @dashboard.retention_preview)
-      end
-
-      def page_schedule
-        html render_view("schedule", title: "Schedule", plan: @dashboard.schedule_plan)
       end
 
       def page_backups(request)
@@ -334,10 +334,10 @@ module PgKeeper
         [303, { "location" => "#{path}?msg=#{Rack::Utils.escape(message)}" }, []]
       end
 
-      # Which page a POST's flash should land on: forms under /connections
-      # flash there, everything else on the Actions page.
+      # Which page a POST's flash should land on: forms under /connections and
+      # /schedule flash there, everything else on the Actions page.
       def flash_path(request)
-        request.path_info.start_with?("/connections") ? "/connections" : "/actions"
+        %w[/connections /schedule].find { |p| request.path_info.start_with?(p) } || "/actions"
       end
 
       def not_found

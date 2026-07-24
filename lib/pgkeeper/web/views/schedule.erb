@@ -1,7 +1,10 @@
 <h1>Schedule</h1>
+<%- if @message -%>
+<%= notice(@message, kind: flash_kind(@message), dismiss: "/schedule") %>
+<%- end -%>
 <%- if @plan.empty? -%>
-<p class="muted">No schedule configured — set <span class="mono">schedule:</span> in your
-config (or run <span class="mono">pgkeeper connect</span>), then a
+<p class="muted">No schedule configured — set one below (or set <span class="mono">schedule:</span>
+in your config / run <span class="mono">pgkeeper connect</span>), then a
 <span class="mono">maintenance:</span> block to schedule verify and prune too.</p>
 <%- else -%>
 <table>
@@ -51,4 +54,54 @@ config (or run <span class="mono">pgkeeper connect</span>), then a
 in a container. <strong>Run now</strong> triggers a job immediately through the same lock as a
 scheduled run — never a second concurrent pipeline — and lands you on the
 <a href="/actions">actions</a> page to watch it.</p>
+<%- end -%>
+
+<h2>Set a schedule</h2>
+<%- if @editable -%>
+<form class="action-card" method="post" action="/schedule/set">
+  <div class="action-head">
+    <span class="action-icon accent">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>
+      </svg>
+    </span>
+    <div>
+      <h3>Write to <span class="mono"><%= h(@config_path) %></span></h3>
+      <p>Pick a database to give it its own cadence (overriding the global default), or edit the
+      global default itself. The expression is validated first and the whole file is re-checked
+      before the atomic write — comments and <span class="mono">ENV</span> interpolations survive.
+      Leave the expression blank to remove an override. PgKeeper reads config at startup, so
+      restart it (and re-run <span class="mono">pgkeeper schedule install</span> if you use
+      cron/systemd) after saving.</p>
+    </div>
+  </div>
+  <input type="hidden" name="_csrf" value="<%= h(@csrf_token) %>">
+  <div class="form-grid">
+    <div class="field">
+      <label class="field-label" for="sched-database">Scope</label>
+      <select id="sched-database" name="database">
+        <option value="">Global default<%= @global_schedule ? " — currently: #{h(@global_schedule)}" : " — none set" %></option>
+        <%- @databases.each do |db| -%>
+        <option value="<%= h(db.name) %>"><%= h(db.name) %><%= db.schedule ? " — currently: #{h(db.schedule)}" : " — inherits the global default" %></option>
+        <%- end -%>
+      </select>
+    </div>
+    <div class="field">
+      <label class="field-label" for="sched-expression">Schedule <span class="muted">— cron, natural language, or a shorthand; blank removes</span></label>
+      <input type="text" id="sched-expression" name="expression"
+             placeholder='0 13 * * * &#183; daily at 03:15 &#183; every monday at 9am &#183; hourly'>
+    </div>
+  </div>
+  <div class="action-foot">
+    <label class="switch"><input type="checkbox" name="confirm"><span class="slider"></span><span class="switch-label">Confirm</span></label>
+    <button type="submit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>
+      Save schedule
+    </button>
+  </div>
+</form>
+<%- else -%>
+<p class="muted">Editing from the web is disabled: the loaded config
+(<span class="mono"><%= h(@config_path) %></span>) is not an editable file from this process.
+Set <span class="mono">schedule:</span> by editing the file directly.</p>
 <%- end -%>

@@ -111,6 +111,81 @@ module PgKeeper
       end
     end
 
+    SCHEDULED_CONFIG = <<~YAML
+      # hand-written comment that must survive edits
+      workdir: /wd
+      schedule: "daily at 03:15"
+      databases:
+        - name: app
+          host: localhost
+          password: <%= ENV["APP_SECRET"] %>
+        # entries below back up the reporting stack
+        - name: reporting
+          host: db2.internal
+          schedule: "hourly"
+      storage:
+        - type: local
+          path: /wd/backups
+    YAML
+
+    def test_set_database_schedule_inserts_into_the_named_entry
+      out = ConfigWriter.set_database_schedule(SCHEDULED_CONFIG, "app", "0 13 * * *")
+
+      assert_includes out, %(    password: <%= ENV["APP_SECRET"] %>\n    schedule: 0 13 * * *\n)
+      assert_includes out, "# hand-written comment that must survive edits"
+      assert_includes out, "# entries below back up the reporting stack"
+      assert_includes out, %(schedule: "hourly"), "the other entry's schedule must be untouched"
+    end
+
+    def test_set_database_schedule_replaces_an_existing_schedule
+      out = ConfigWriter.set_database_schedule(SCHEDULED_CONFIG, "reporting", "daily at 02:30")
+
+      assert_includes out, "    schedule: daily at 02:30\n"
+      refute_includes out, %(schedule: "hourly")
+      assert_includes out, %(schedule: "daily at 03:15"), "the global schedule must be untouched"
+    end
+
+    def test_set_database_schedule_removes_with_a_nil_expression
+      out = ConfigWriter.set_database_schedule(SCHEDULED_CONFIG, "reporting", nil)
+
+      refute_includes out, "hourly"
+      assert_includes out, "- name: reporting\n"
+      assert_includes out, %(schedule: "daily at 03:15")
+    end
+
+    def test_set_database_schedule_raises_for_an_unknown_database
+      error = assert_raises(ConfigError) do
+        ConfigWriter.set_database_schedule(SCHEDULED_CONFIG, "nope", "hourly")
+      end
+
+      assert_match(/no database named "nope"/, error.message)
+    end
+
+    def test_set_database_schedule_raises_without_a_databases_block
+      assert_raises(ConfigError) { ConfigWriter.set_database_schedule("workdir: /wd\n", "app", "hourly") }
+    end
+
+    def test_set_global_schedule_replaces_the_top_level_key
+      out = ConfigWriter.set_global_schedule(SCHEDULED_CONFIG, "0 4 * * *")
+
+      assert_includes out, "schedule: 0 4 * * *\n"
+      refute_includes out, %(schedule: "daily at 03:15")
+      assert_includes out, %(schedule: "hourly"), "per-database schedules must be untouched"
+    end
+
+    def test_set_global_schedule_inserts_above_databases_when_absent
+      out = ConfigWriter.set_global_schedule("workdir: /wd\ndatabases:\n  - name: app\n", "hourly")
+
+      assert_match(%r{workdir: /wd\nschedule: hourly\ndatabases:\n}, out)
+    end
+
+    def test_set_global_schedule_removes_with_a_nil_expression
+      out = ConfigWriter.set_global_schedule(SCHEDULED_CONFIG, nil)
+
+      refute_includes out, %(schedule: "daily at 03:15")
+      assert_includes out, %(schedule: "hourly")
+    end
+
     def test_write_is_atomic_and_creates_parent_dirs
       in_tmpdir do |dir|
         path = File.join(dir, "nested", "pgkeeper.yml")

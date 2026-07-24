@@ -3,6 +3,22 @@
 All notable changes to PgKeeper. Versions map to the milestones in
 [PLAN.md](PLAN.md).
 
+## Unreleased
+
+### Added
+
+- **Schedules can now be edited from the web.** The dashboard's Schedule page
+  grows a "Set a schedule" form: pick a database (giving it its own cadence
+  that overrides the global default) or the global default itself, and enter
+  cron, natural language, or a shorthand — the same expressions `schedule:`
+  accepts in the config. The expression is parsed first, the `schedule:` key
+  is set (or, with a blank expression, removed) via the wizard's targeted
+  text surgery so comments and ERB interpolations survive, and the whole
+  updated file is re-validated before the atomic write. Browser-only by
+  design (CSRF + confirm; not on the Bearer API). PgKeeper reads config at
+  boot, so the flash reminds you to restart — and to re-run
+  `pgkeeper schedule install` where cron/systemd is the trigger.
+
 ## 1.1.0 — 2026-07-24
 
 ### Added

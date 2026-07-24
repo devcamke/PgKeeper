@@ -330,6 +330,11 @@ round-trip latency; credentials never shown. Also tests a connection on
 demand and adds a database to `pgkeeper.yml` from the browser: the connection
 is probed first, the password lands as an `ENV` reference — export it and
 restart pgkeeper to load the entry),
+**Schedule** (the resolved plan with per-job **Run now** buttons, plus an
+editor that sets — or clears — `schedule:` keys in `pgkeeper.yml`, per
+database or the global default: the expression is validated, the file is
+re-checked as a whole, and comments/ERB survive; restart pgkeeper and re-run
+`pgkeeper schedule install` if cron/systemd is your trigger),
 **Retention** (exactly what the next prune deletes), **Actions** (trigger
 backup / verify / prune / test-notification / doctor — with a per-destination
 picker on backup — each behind a confirmation, running through the same lock as

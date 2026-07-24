@@ -169,3 +169,5 @@ module PgKeeper
     end
   end
 end
+
+require "pgkeeper/config_writer/schedule_surgery"

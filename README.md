@@ -177,7 +177,10 @@ set a recovery SLA you can keep.
     adds a database to the config only after its connection test passes.
   - **Retention**: the policy and exactly what the next prune would delete.
   - **Schedule**: the resolved plan (jobs, cron, next fire times) with per-job
-    **Run now** buttons that share the scheduled runs' lock.
+    **Run now** buttons that share the scheduled runs' lock, and a validated
+    editor that writes `schedule:` keys — per database or the global default —
+    back to the config with comments and `<%= ENV[...] %>` interpolations
+    preserved.
   - **Backups**: browse artifacts across destinations and download them (allowlisted
     against the catalog — the endpoint can't be steered at arbitrary paths); each
     destination's table paginates independently.
