@@ -1,0 +1,117 @@
+# PgKeeper config for the deploy/docker-compose.yml deployment: one PgKeeper
+# container backing up the databases of several applications that already run
+# on this server. Edit the `databases:` list to match your apps, set the
+# schedules, and keep every secret as an ERB environment reference (the values
+# come from .env via the compose file) — never inline a real password here.
+#
+# Full reference: ../config/pgkeeper.example.yml
+
+# Staging area, local backups, run history, and job locks — the volume the
+# compose file mounts.
+workdir: /var/backups/pgkeeper
+
+# Global default; any database below can override it with its own `schedule:`.
+# Accepts cron ("15 3 * * *"), natural language ("every 6 hours"), or
+# shorthands ("daily at 03:15", "weekly on sunday at 04:00").
+schedule: daily at 03:15
+
+# Unattended upkeep, run by the same daemon: prove backups are restorable
+# (verify) and enforce retention (prune).
+maintenance:
+  verify:
+    schedule: weekly on sunday at 04:00
+    deep: true            # Tier-3: restore into a throwaway scratch database
+  prune:
+    schedule: daily at 05:00
+    apply: true           # actually delete (false = dry-run/report only)
+
+# Applied to every database unless it overrides them.
+defaults:
+  # Postgres running on the host itself (see extra_hosts in the compose file).
+  # For a Postgres container in another compose project, join its network and
+  # set that service's name as `host:` on the database entry instead.
+  host: host.docker.internal
+  port: 5432
+  username: backup_user
+  format: custom          # custom | plain | directory
+  include_globals: true   # also capture roles/tablespaces via pg_dumpall
+
+# One entry per application database. `name:` labels the backup artifacts and
+# the dashboard; `database:` is the actual Postgres database name.
+databases:
+  - name: app1
+    database: app1_production
+    password: <%= ENV["PGKEEPER_APP1_PASSWORD"] %>
+
+  - name: app2
+    database: app2_production
+    password: <%= ENV["PGKEEPER_APP2_PASSWORD"] %>
+    schedule: every 6 hours       # example per-database override
+
+# gzip | zip | zstd | none — skipped automatically for custom/directory dumps,
+# which pg_dump already compresses.
+compression: gzip
+
+# Strongly recommended before adding any cloud destination: artifacts are
+# encrypted BEFORE upload, so the cloud never sees plaintext.
+encryption:
+  enabled: false
+  type: aes256gcm
+  passphrase_env: PGKEEPER_ENCRYPTION_PASSPHRASE
+
+# Every run fans out to every destination; each is tracked independently.
+storage:
+  - type: local
+    path: /var/backups/pgkeeper/backups
+
+  # A NAS is a `local` target at its mount point (bind-mount it in compose):
+  # - type: local
+  #   name: nas
+  #   path: /mnt/nas/pgkeeper
+
+  # Off-site copy (AWS S3, MinIO, Backblaze B2, Cloudflare R2, Spaces):
+  # - type: s3
+  #   name: cloud
+  #   bucket: my-pgkeeper-backups
+  #   region: us-east-1
+  #   prefix: production
+  #   # endpoint: https://s3.us-west-000.backblazeb2.com   # non-AWS providers
+  #   # force_path_style: true                             # MinIO and friends
+  #   access_key_id: <%= ENV["AWS_ACCESS_KEY_ID"] %>
+  #   secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
+
+# Enforced per destination and per database; safety rails never delete the
+# newest or last verified backup.
+retention:
+  keep_daily: 7
+  keep_weekly: 4
+  keep_monthly: 6
+
+# Failure alerts are strongly recommended — pick at least one channel.
+# notifications:
+#   email:
+#     to: [ops@example.com]
+#     from: pgkeeper@example.com
+#     on: [failure]
+#     smtp:
+#       host: smtp.example.com
+#       port: 587
+#       user_name: pgkeeper
+#       password: <%= ENV["PGKEEPER_SMTP_PASSWORD"] %>
+#   webhook:
+#     url: <%= ENV["PGKEEPER_WEBHOOK_URL"] %>
+#     format: slack
+#     on: [failure]
+#   healthcheck:                 # dead-man's switch (healthchecks.io, Uptime Kuma, ...)
+#     url: <%= ENV["PGKEEPER_HEALTHCHECK_URL"] %>
+
+# The dashboard + remote-trigger API served by `daemon-with-web`.
+web:
+  # Inside a container it must bind 0.0.0.0 for the published port to reach
+  # it; the compose file publishes it on the HOST's loopback only.
+  bind: 0.0.0.0
+  port: 8321
+  auth:
+    # Browsers: basic auth (any username, this token as the password).
+    # Scripts:  Authorization: Bearer <token>  → POST /api/actions/backup
+    token: <%= ENV["PGKEEPER_WEB_TOKEN"] %>
