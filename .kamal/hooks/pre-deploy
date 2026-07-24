@@ -1,0 +1,24 @@
+#!/bin/sh
+# Kamal pre-deploy hook: sync deploy/pgkeeper.yml to /etc/pgkeeper/pgkeeper.yml
+# on every target host, so the bind mount in config/deploy.yml always serves
+# the config from this checkout. Runs automatically on `kamal deploy` (and
+# `kamal setup`); each deploy boots a fresh container, which re-reads it.
+#
+# Kamal exports KAMAL_HOSTS as a comma-separated list. The SSH user must be
+# able to write /etc/pgkeeper — Kamal's default deploy user is root; override
+# with PGKEEPER_DEPLOY_SSH_USER if yours differs.
+set -e
+
+user="${PGKEEPER_DEPLOY_SSH_USER:-root}"
+config="$(dirname "$0")/../../deploy/pgkeeper.yml"
+
+if [ ! -f "$config" ]; then
+  echo "pre-deploy: $config not found — nothing to sync" >&2
+  exit 1
+fi
+
+for host in $(printf '%s' "$KAMAL_HOSTS" | tr ',' ' '); do
+  echo "pre-deploy: syncing pgkeeper.yml to $user@$host:/etc/pgkeeper/pgkeeper.yml"
+  ssh "$user@$host" 'mkdir -p /etc/pgkeeper'
+  scp "$config" "$user@$host:/etc/pgkeeper/pgkeeper.yml"
+done

@@ -15,8 +15,14 @@ deploy/
 ├── docker-compose.yml   # the PgKeeper service (daemon + dashboard)
 ├── pgkeeper.yml         # config template: databases, schedules, storage, web
 ├── .env.example         # secrets template → copy to .env
+├── KAMAL.md             # alternative: push-button deploys from your workstation
 └── README.md            # this file
 ```
+
+> Prefer deploying from your workstation instead of running compose on the server?
+> [KAMAL.md](KAMAL.md) deploys the same container with [Kamal](https://kamal-deploy.org)
+> — builds locally, ships over SSH, with releases and rollbacks. Pick one mechanism,
+> not both. The rest of this file covers the compose path.
 
 ## 1. Prerequisites
 
