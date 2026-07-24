@@ -3,7 +3,7 @@
 All notable changes to PgKeeper. Versions map to the milestones in
 [PLAN.md](PLAN.md).
 
-## Unreleased
+## 1.1.0 — 2026-07-24
 
 ### Added
 
