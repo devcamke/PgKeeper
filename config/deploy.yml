@@ -1,0 +1,85 @@
+# Kamal deployment for PgKeeper (daemon + web dashboard) — deploy the same
+# container the compose kit runs, but built locally, pushed to a registry, and
+# booted on your server(s) over SSH with zero-downtime restarts.
+#
+#   gem install kamal
+#   $EDITOR config/deploy.yml deploy/pgkeeper.yml     # this file + the app config
+#   export KAMAL_REGISTRY_PASSWORD=... PGKEEPER_APP1_PASSWORD=... \
+#          PGKEEPER_APP2_PASSWORD=... PGKEEPER_WEB_TOKEN=...
+#   kamal setup      # first time (bootstraps Docker on the host), then:
+#   kamal deploy
+#
+# Full walkthrough: deploy/KAMAL.md. Secrets are declared in .kamal/secrets
+# (which reads your environment — nothing sensitive lives in the repo).
+
+service: pgkeeper
+
+# Where `kamal deploy` pushes the built image. Docker Hub: "user/pgkeeper";
+# GHCR: "ghcr.io/user/pgkeeper" (and set registry.server below).
+image: your-registry-user/pgkeeper
+
+servers:
+  web:
+    hosts:
+      - 203.0.113.10                # your server's address
+    # The in-process scheduler + dashboard (see docker/entrypoint.sh). Use
+    # plain `daemon` to run without the web UI.
+    cmd: daemon-with-web
+    # No kamal-proxy: the dashboard is published on the HOST's loopback only —
+    # reach it via SSH tunnel or your own reverse proxy. To serve it on a
+    # domain with automatic TLS instead, see the `proxy:` block below.
+    proxy: false
+    options:
+      publish:
+        - "127.0.0.1:8321:8321"
+      # Lets pgkeeper.yml reach Postgres on the host as host.docker.internal.
+      add-host:
+        - "host.docker.internal:host-gateway"
+
+# Alternative to the loopback publish above: put kamal-proxy in front for a
+# real domain + automatic Let's Encrypt TLS (dashboard auth still applies).
+# Remove `proxy: false` and the `publish:` option from the role, then:
+# proxy:
+#   ssl: true
+#   host: pgkeeper.example.com
+#   app_port: 8321
+#   healthcheck:
+#     path: /healthz                # unauthenticated probe, exactly for this
+
+registry:
+  # server: ghcr.io                 # default is Docker Hub
+  username: your-registry-user
+  password:
+    - KAMAL_REGISTRY_PASSWORD       # resolved via .kamal/secrets
+
+# Values land in the container's environment and are interpolated into
+# pgkeeper.yml via its ERB references. Keep this list in sync with the env
+# vars your deploy/pgkeeper.yml mentions; declare each in .kamal/secrets.
+env:
+  secret:
+    - PGKEEPER_APP1_PASSWORD
+    - PGKEEPER_APP2_PASSWORD
+    - PGKEEPER_WEB_TOKEN
+    # - PGKEEPER_ENCRYPTION_PASSPHRASE
+    # - PGKEEPER_SMTP_PASSWORD
+    # - AWS_ACCESS_KEY_ID
+    # - AWS_SECRET_ACCESS_KEY
+
+volumes:
+  # The app config, synced onto the host by .kamal/hooks/pre-deploy (or by
+  # hand — see deploy/KAMAL.md). /etc/pgkeeper/pgkeeper.yml is a default
+  # config search path of the CLI, so no -c flag is needed.
+  - "/etc/pgkeeper/pgkeeper.yml:/etc/pgkeeper/pgkeeper.yml:ro"
+  # Backups, run history, and job locks — a named Docker volume on the host.
+  # Point at a bind path instead to keep backups on a specific disk/NAS mount.
+  - "pgkeeper_backups:/var/backups/pgkeeper"
+
+builder:
+  arch: amd64                       # match the server's CPU architecture
+  # No local Docker (or an ARM laptop deploying to an x86 server)? Build on
+  # the server itself:
+  # remote: ssh://root@203.0.113.10
+
+# ssh:
+#   user: root                      # Kamal's default; set if you deploy as
+#                                   # another (sudo-capable, docker-group) user

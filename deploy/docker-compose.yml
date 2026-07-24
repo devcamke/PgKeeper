@@ -1,0 +1,94 @@
+# PgKeeper on a server that already runs your applications and their
+# PostgreSQL databases. Unlike ../docker-compose.example.yml, this compose
+# file does NOT start a database — it runs only PgKeeper (scheduler daemon +
+# web dashboard) and points it at the databases you already have.
+#
+# Quick start (full walkthrough in README.md next to this file):
+#
+#   cd deploy
+#   cp .env.example .env            # edit: passwords + dashboard token
+#   $EDITOR pgkeeper.yml            # edit: your databases + schedule
+#   docker compose run --rm pgkeeper doctor
+#   docker compose up -d
+#
+# Reaching your databases from inside the container:
+#   * Postgres on the HOST (apt/systemd install, or a container publishing
+#     5432 on the host): keep `host.docker.internal` in pgkeeper.yml — the
+#     extra_hosts entry below maps it to the host. On Linux, Postgres must
+#     listen beyond 127.0.0.1 (listen_addresses) and pg_hba.conf must allow
+#     the Docker bridge subnet (commonly 172.16.0.0/12).
+#   * Postgres in ANOTHER compose project: join its network instead — see the
+#     commented `networks:` blocks at the bottom — and use the service name
+#     (e.g. `db`) as the host in pgkeeper.yml.
+
+services:
+  pgkeeper:
+    # Build from the repo checkout this folder sits in. To use a prebuilt
+    # image instead, replace `build` with `image: pgkeeper:latest` after
+    # `docker build -t pgkeeper .` in the repo root.
+    build: ..
+    container_name: pgkeeper
+    # daemon-with-web = in-process scheduler (runs every `schedule:` in
+    # pgkeeper.yml, with jitter) + the dashboard on port 8321. Use `daemon`
+    # instead if you don't want the web UI.
+    command: daemon-with-web
+    environment:
+      # Everything referenced as <%= ENV["..."] %> in pgkeeper.yml must be
+      # listed here; values come from .env. Never write secrets into
+      # pgkeeper.yml itself.
+      PGKEEPER_APP1_PASSWORD: ${PGKEEPER_APP1_PASSWORD:?set in .env}
+      PGKEEPER_APP2_PASSWORD: ${PGKEEPER_APP2_PASSWORD:?set in .env}
+      PGKEEPER_WEB_TOKEN: ${PGKEEPER_WEB_TOKEN:?set in .env}
+      # Uncomment along with the matching blocks in pgkeeper.yml:
+      # PGKEEPER_ENCRYPTION_PASSPHRASE: ${PGKEEPER_ENCRYPTION_PASSPHRASE}
+      # PGKEEPER_SMTP_PASSWORD: ${PGKEEPER_SMTP_PASSWORD}
+      # AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      # AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      # The CLI's default config search path inside the image.
+      - ./pgkeeper.yml:/etc/pgkeeper/pgkeeper.yml:ro
+      # Backups, run history (SQLite), and job locks. A named volume by
+      # default; to keep backups on a specific disk or NAS mount, use a bind
+      # mount instead, e.g.  - /srv/backups/pgkeeper:/var/backups/pgkeeper
+      - backups:/var/backups/pgkeeper
+    ports:
+      # Dashboard on the host's loopback only — reach it via SSH tunnel
+      # (ssh -L 8321:127.0.0.1:8321 you@server) or put your reverse proxy in
+      # front with TLS. Only remove the 127.0.0.1 prefix behind such a proxy.
+      - "127.0.0.1:8321:8321"
+    extra_hosts:
+      # Makes `host.docker.internal` resolve to the host from inside the
+      # container (needed on Linux; built in on Docker Desktop).
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      # /healthz sits outside auth, exactly for probes like this.
+      test:
+        [
+          "CMD",
+          "ruby",
+          "-rnet/http",
+          "-e",
+          "exit(Net::HTTP.get_response(URI('http://127.0.0.1:8321/healthz')).code == '200' ? 0 : 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    # To back up Postgres containers from other compose projects, join their
+    # networks and use their service names as hosts in pgkeeper.yml:
+    # networks:
+    #   - default
+    #   - app1_net
+    #   - app2_net
+
+# networks:
+#   app1_net:
+#     external: true
+#     name: app1_default        # find with: docker network ls
+#   app2_net:
+#     external: true
+#     name: app2_default
+
+volumes:
+  backups:
