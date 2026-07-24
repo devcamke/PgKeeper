@@ -171,7 +171,12 @@ set a recovery SLA you can keep.
     per-destination health grid.
   - **Runs**: timeline of every recorded run with a detail page per run (duration,
     per-destination status, stderr on failures).
+  - **Connections**: everything PgKeeper talks to, live-probed as the page loads —
+    databases, PITR clusters, and storage destinations — plus a probe-first form that
+    adds a database to the config only after its connection test passes.
   - **Retention**: the policy and exactly what the next prune would delete.
+  - **Schedule**: the resolved plan (jobs, cron, next fire times) with per-job
+    **Run now** buttons that share the scheduled runs' lock.
   - **Backups**: browse artifacts across destinations and download them (allowlisted
     against the catalog — the endpoint can't be steered at arbitrary paths).
   - **Actions**: trigger backup / verify / prune / test-notification / doctor from the
@@ -251,10 +256,24 @@ pipeline and verification tier per artifact; downloads are allowlisted against t
 
 ![PgKeeper dashboard — backups](docs/images/dashboard-backups.png)
 
+**Connections** — everything PgKeeper talks to, probed live as the page loads: each
+database and PITR cluster gets the same bounded `psql` round-trip a real run would use
+(endpoint, TLS mode, server version, latency — never a credential), plus a probe-first
+**add-a-database form** that tests the connection before anything is written to the
+config:
+
+![PgKeeper dashboard — connections](docs/images/dashboard-connections.png)
+
 **Retention** — the active policy and exactly what the next prune would delete (a preview;
 the safety rails always apply):
 
 ![PgKeeper dashboard — retention](docs/images/dashboard-retention.png)
+
+**Schedule** — the resolved plan (the same one `pgkeeper schedule print` shows), each
+job's cron and next fire times, with a **Run now** button that goes through the same lock
+as the scheduled runs:
+
+![PgKeeper dashboard — schedule](docs/images/dashboard-schedule.png)
 
 **Actions** — trigger backup / verify / prune / test-notification / doctor from the
 browser; each needs a CSRF token plus an explicit confirmation. Restores are deliberately
