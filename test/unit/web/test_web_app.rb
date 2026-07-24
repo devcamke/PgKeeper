@@ -134,6 +134,94 @@ module PgKeeper
       refute_includes last_response.body, "r-analytics"
     end
 
+    def test_runs_page_paginates_newest_first
+      3.times do |i|
+        seed_history(@config, run_id: "run-#{i}", at: Time.utc(2026, 7, 18 + i, 3, 15))
+      end
+
+      get "/runs", "limit" => "2"
+
+      assert_includes last_response.body, "run-2"
+      assert_includes last_response.body, "run-1"
+      refute_includes last_response.body, "run-0"
+      assert_includes last_response.body, "page 1 of 2"
+      assert_includes last_response.body, "3 runs"
+
+      get "/runs", "limit" => "2", "page" => "2"
+
+      assert_includes last_response.body, "run-0"
+      refute_includes last_response.body, "run-2"
+      assert_includes last_response.body, "page 2 of 2"
+    end
+
+    def test_runs_pager_preserves_the_database_filter_and_clamps_the_page
+      seed_history(@config, run_id: "app-old", database: "app", at: Time.utc(2026, 7, 18, 3))
+      seed_history(@config, run_id: "app-new", database: "app", at: Time.utc(2026, 7, 19, 3))
+
+      get "/runs", "database" => "app", "limit" => "1"
+
+      assert_includes last_response.body, "database=app", "pager links carry the filter"
+
+      get "/runs", "database" => "app", "limit" => "1", "page" => "99"
+
+      assert_equal 200, last_response.status
+      assert_includes last_response.body, "app-old", "out-of-range page clamps to the last page"
+    end
+
+    def test_backups_page_paginates_each_destination
+      root = File.join(@dir, "backups")
+      12.times { |i| seed_backup(root, "app", Time.utc(2026, 7, 1 + i, 3, 15)) }
+      destination = "local:#{root}"
+
+      get "/backups"
+
+      assert_includes last_response.body, "2026-07-12T031500Z", "newest set on page 1"
+      refute_includes last_response.body, "2026-07-01T031500Z", "oldest set pushed to page 2"
+      assert_includes last_response.body, "page 1 of 2"
+      assert_includes last_response.body, "12 backup sets"
+
+      get "/backups", "page" => { destination => "2" }
+
+      assert_includes last_response.body, "2026-07-01T031500Z"
+      refute_includes last_response.body, "2026-07-12T031500Z"
+      assert_includes last_response.body, "page 2 of 2"
+    end
+
+    def test_logs_page_tails_filters_and_hints_when_missing
+      get "/logs"
+
+      assert_equal 200, last_response.status
+      assert_includes last_response.body, "No log file yet"
+
+      log = File.join(@dir, "pgkeeper.log")
+      File.write(log, <<~LOG)
+        ts=2026-07-24T03:15:00Z level=info msg="backup complete" db=app
+        ts=2026-07-24T03:16:00Z level=error msg="upload failed" destination=nas
+        {"ts":"2026-07-24T03:17:00Z","level":"warn","msg":"dump smaller than baseline"}
+      LOG
+
+      get "/logs"
+
+      assert_includes last_response.body, "backup complete"
+      assert_includes last_response.body, "log-error"
+      assert_includes last_response.body, "log-warn", "JSON lines are level-parsed too"
+
+      get "/logs", "level" => "error"
+
+      assert_includes last_response.body, "upload failed"
+      refute_includes last_response.body, "backup complete"
+    end
+
+    def test_logs_page_clamps_the_lines_param
+      log = File.join(@dir, "pgkeeper.log")
+      File.write(log, (1..12).map { |i| "level=info msg=line-#{format('%02d', i)}" }.join("\n") << "\n")
+
+      get "/logs", "lines" => "5"
+
+      assert_includes last_response.body, "line-03", "lines clamps up to its floor of 10"
+      refute_includes last_response.body, "line-02"
+    end
+
     def test_runs_page_has_a_csrf_guarded_run_backup_button
       get "/runs"
 
@@ -368,6 +456,19 @@ module PgKeeper
       assert_equal(["r2"], runs.map { |r| r["run_id"] })
       assert_equal %w[run_id database status started_at finished_at duration_seconds
                       artifact_count total_bytes destinations error].sort, runs.first.keys.sort
+    end
+
+    def test_api_runs_supports_offset_and_reports_the_total
+      seed_history(@config, run_id: "r1", database: "app")
+      seed_history(@config, run_id: "r2", database: "app", at: Time.utc(2026, 7, 21, 4))
+
+      get "/api/runs", "limit" => "1", "offset" => "1"
+
+      body = JSON.parse(last_response.body)
+
+      assert_equal(["r1"], body.fetch("runs").map { |r| r["run_id"] })
+      assert_equal 2, body.fetch("total")
+      assert_equal 1, body.fetch("offset")
     end
 
     def test_post_without_csrf_token_is_forbidden

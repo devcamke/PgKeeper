@@ -97,17 +97,28 @@ module PgKeeper
       rows.map { |h| h["total_bytes"].to_i }
     end
 
-    # The most recent +limit+ rows, optionally for one database.
-    def recent(limit: 20, database: nil)
+    # The most recent +limit+ rows, optionally for one database. +offset+ skips
+    # that many newest rows first — the unit of pagination.
+    def recent(limit: 20, database: nil, offset: 0)
       sql = +"SELECT * FROM runs"
       params = []
       if database
         sql << " WHERE database = ?"
         params << text_param(database)
       end
-      sql << " ORDER BY started_at DESC, id DESC LIMIT ?"
-      params << limit
+      sql << " ORDER BY started_at DESC, id DESC LIMIT ? OFFSET ?"
+      params << limit << offset
       query(sql, params).map { |h| to_row(h) }
+    end
+
+    # Total recorded rows, optionally for one database. Pairs with {#recent}'s
+    # offset to page through the full timeline.
+    def count(database: nil)
+      if database
+        query("SELECT COUNT(*) AS n FROM runs WHERE database = ?", [text_param(database)]).first["n"].to_i
+      else
+        query("SELECT COUNT(*) AS n FROM runs").first["n"].to_i
+      end
     end
 
     private

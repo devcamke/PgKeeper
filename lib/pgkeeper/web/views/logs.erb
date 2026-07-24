@@ -1,0 +1,47 @@
+<h1>Logs</h1>
+<p class="lead">
+  The tail of the operational log — <span class="mono"><%= h(@tail.path) %></span>, the
+  file the cron lines from <span class="mono">pgkeeper schedule install</span> append to.
+  Point the daemon or the dashboard at it too with
+  <span class="mono">--log-file <%= h(@tail.path) %></span> and their lines land here as
+  well. The page reads a bounded window from the end of the file, never the whole log.
+</p>
+<div class="toolbar">
+  <form method="get" action="/logs">
+    <label>Lines
+      <select name="lines">
+        <%- [100, 200, 500, 1000].each do |n| -%>
+        <option value="<%= n %>" <%= @lines == n ? "selected" : "" %>><%= n %></option>
+        <%- end -%>
+      </select>
+    </label>
+    <label>Level
+      <select name="level">
+        <option value="">(all)</option>
+        <%- LOG_LEVELS.each do |lvl| -%>
+        <option value="<%= lvl %>" <%= @level == lvl ? "selected" : "" %>><%= lvl %></option>
+        <%- end -%>
+      </select>
+    </label>
+    <button type="submit">Refresh</button>
+  </form>
+  <%- if @tail.exists? -%>
+  <span class="muted"><%= h(human_size(@tail.size_bytes)) %> ·
+    last write <%= tip(h(human_age(@tail.modified_at)), fmt_time(@tail.modified_at)) %></span>
+  <%- end -%>
+</div>
+<%- if !@tail.exists? -%>
+<p class="muted">No log file yet. It appears once something writes to
+  <span class="mono"><%= h(@tail.path) %></span> — the crontab lines emitted by
+  <span class="mono">pgkeeper schedule install</span> append there by default, and any
+  command accepts <span class="mono">--log-file</span> to do the same.</p>
+<%- elsif @shown.empty? -%>
+<p class="muted">No lines<%= @level ? " at level #{h(@level)}" : "" %> in the last
+  <%= @lines %> line(s) of the log.</p>
+<%- else -%>
+<pre class="log"><%- @shown.each do |line| -%>
+<span class="log-line <%= log_line_level(line) ? "log-#{log_line_level(line)}" : "" %>"><%= h(line) %></span>
+<%- end -%></pre>
+<p class="muted">Showing the last <%= @shown.length %> line(s)<%= @level ? " at level #{h(@level)}" : "" %>
+  (of up to <%= @lines %> read from the tail), oldest first.</p>
+<%- end -%>

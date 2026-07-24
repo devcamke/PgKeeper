@@ -66,12 +66,44 @@ module PgKeeper
         []
       end
 
-      def recent_runs(database: nil, limit: 50)
-        history.recent(limit: limit, database: database)
+      def recent_runs(database: nil, limit: 50, offset: 0)
+        history.recent(limit: limit, database: database, offset: offset)
+      end
+
+      def runs_count(database: nil)
+        history.count(database: database)
       end
 
       def run_detail(run_id)
         history.runs_for(run_id)
+      end
+
+      # The operational log: the tail of +<workdir>/pgkeeper.log+ — the file the
+      # cron installer's lines append to, and the conventional target for
+      # +--log-file+ on the daemon and the dashboard itself.
+      LOG_BASENAME = "pgkeeper.log"
+
+      # Cap on how many bytes {#log_tail} will read from the end of the file:
+      # generous for real log lines, bounded for pathological ones.
+      MAX_TAIL_BYTES = 1 << 20
+
+      LogTail = Struct.new(:path, :exists, :lines, :size_bytes, :modified_at, keyword_init: true) do
+        def exists? = exists
+      end
+
+      # The last +lines+ lines of the log, oldest of them first. Reads a bounded
+      # window from the end of the file (never the whole log), so a
+      # multi-gigabyte log can't take the page down.
+      def log_tail(lines: 200)
+        path = File.join(@config.workdir, LOG_BASENAME)
+        return LogTail.new(path: path, exists: false, lines: []) unless File.file?(path)
+
+        stat = File.stat(path)
+        LogTail.new(path: path, exists: true, lines: tail_lines(path, stat.size, lines),
+                    size_bytes: stat.size, modified_at: stat.mtime.utc)
+      rescue StandardError => e
+        @logger.error("log tail failed", error: e.message, error_class: e.class.name)
+        LogTail.new(path: path, exists: false, lines: [])
       end
 
       # Backup sets grouped per destination: [[adapter_name, sets], ...].
@@ -83,6 +115,20 @@ module PgKeeper
           [adapter.name, Catalog.new(adapter).backup_sets.sort_by(&:timestamp).reverse, nil]
         rescue EnvironmentError, StorageError => e
           ["#{target['type']}:?", [], e.message]
+        end
+      end
+
+      # {#sets_by_destination} windowed for the Backups page: one
+      # [name, sets_for_page, error, pagination] tuple per destination, where
+      # the pagination hash carries this table's page key plus the other
+      # tables' current pages, so following one pager preserves the rest.
+      def paged_sets_by_destination(pages_param, per_page:)
+        sets_by_destination.map do |name, sets, error|
+          pages = [(sets.length.to_f / per_page).ceil, 1].max
+          page = pages_param[name].to_i.clamp(1, pages)
+          others = pages_param.reject { |key, _| key == name }.transform_keys { |key| "page[#{key}]" }
+          [name, sets.slice((page - 1) * per_page, per_page) || [], error,
+           { page: page, pages: pages, total: sets.length, key: "page[#{name}]", query: others }]
         end
       end
 
@@ -158,8 +204,12 @@ module PgKeeper
         }
       end
 
-      def api_runs(database: nil, limit: 50)
-        { "runs" => recent_runs(database: database, limit: limit).map { |row| api_run(row) } }
+      def api_runs(database: nil, limit: 50, offset: 0)
+        {
+          "runs" => recent_runs(database: database, limit: limit, offset: offset).map { |row| api_run(row) },
+          "total" => runs_count(database: database),
+          "offset" => offset
+        }
       end
 
       def api_run(row)
@@ -180,6 +230,17 @@ module PgKeeper
       end
 
       private
+
+      def tail_lines(path, size, wanted)
+        window = [size, [wanted * 512, MAX_TAIL_BYTES].min].min
+        chunk = File.open(path, "rb") do |f|
+          f.seek(size - window)
+          f.read
+        end
+        lines = chunk.force_encoding(Encoding::UTF_8).scrub.split("\n")
+        lines.shift if window < size # first line is almost certainly cut mid-line
+        lines.last(wanted)
+      end
 
       def api_database(row)
         {

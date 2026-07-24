@@ -225,6 +225,22 @@
     padding: 0.85rem 1rem; border-radius: 10px; overflow-x: auto; font-size: 0.85rem;
   }
 
+  /* -- Pagination ----------------------------------------------------- */
+  .pager {
+    display: flex; gap: 1rem; align-items: center; justify-content: center;
+    margin: 0.75rem 0 1.5rem; font-size: 0.9rem;
+  }
+  .pager a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .pager a:hover { text-decoration: underline; }
+  .pager-off { color: var(--muted); opacity: 0.5; }
+
+  /* -- Logs page ------------------------------------------------------ */
+  pre.log { line-height: 1.45; max-height: 70vh; overflow: auto; }
+  .log-line { white-space: pre; }
+  .log-warn { color: var(--warn); }
+  .log-error, .log-fatal { color: var(--bad); }
+  .log-debug { color: var(--muted); }
+
   /* -- Actions page -------------------------------------------------- */
   .lead { color: var(--muted); font-size: 0.93rem; max-width: 62rem; margin: 0 0 1.5rem; }
 
@@ -360,6 +376,7 @@
     <a href="/connections" class="<%= @active == 'connections' ? 'active' : '' %>">Connections</a>
     <a href="/retention" class="<%= @active == 'retention' ? 'active' : '' %>">Retention</a>
     <a href="/schedule" class="<%= @active == 'schedule' ? 'active' : '' %>">Schedule</a>
+    <a href="/logs" class="<%= @active == 'logs' ? 'active' : '' %>">Logs</a>
     <a href="/actions" class="<%= @active == 'actions' ? 'active' : '' %>">Actions</a>
   </nav>
 </header>

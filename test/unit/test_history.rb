@@ -98,5 +98,29 @@ module PgKeeper
       refute broken.record(report(result("app", :success)), run_id: "x",
                                                             started_at: Time.now, finished_at: Time.now)
     end
+
+    def test_recent_offset_pages_through_newest_first
+      5.times do |i|
+        record(report(result("app", :success)), run_id: "r#{i}", at: Time.utc(2026, 5, 1 + i, 3))
+      end
+
+      page1 = @history.recent(limit: 2)
+      page2 = @history.recent(limit: 2, offset: 2)
+      page3 = @history.recent(limit: 2, offset: 4)
+
+      assert_equal %w[r4 r3], page1.map(&:run_id)
+      assert_equal %w[r2 r1], page2.map(&:run_id)
+      assert_equal %w[r0], page3.map(&:run_id)
+    end
+
+    def test_count_totals_rows_optionally_per_database
+      record(report(result("app", :success), result("analytics", :success)), run_id: "r1")
+      record(report(result("app", :failure)), run_id: "r2", at: Time.utc(2026, 5, 2, 3))
+
+      assert_equal 3, @history.count
+      assert_equal 2, @history.count(database: "app")
+      assert_equal 1, @history.count(database: "analytics")
+      assert_equal 0, @history.count(database: "missing")
+    end
   end
 end

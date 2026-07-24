@@ -22,6 +22,18 @@ module PgKeeper
 
       VIEWS = File.expand_path("views", __dir__)
 
+      # Runs per page on the timeline; the pager walks the full history.
+      RUNS_PER_PAGE = 50
+
+      # Backup sets per page, per destination — each destination pages
+      # independently via nested +page[<destination>]=N+ params.
+      SETS_PER_PAGE = 10
+
+      # Log lines shown by default and at most; the file is only ever read from
+      # the tail, so the cap guards the page, not the disk.
+      LOG_LINES_DEFAULT = 200
+      LOG_LINES_MAX = 1000
+
       attr_reader :jobs, :csrf_token
 
       def initialize(config, logger: PgKeeper.logger, actions: nil, connections: nil)
@@ -64,7 +76,8 @@ module PgKeeper
         when "/connections" then page_connections(request)
         when "/retention" then page_retention
         when "/schedule" then page_schedule
-        when "/backups" then page_backups
+        when "/logs" then page_logs(request)
+        when "/backups" then page_backups(request)
         when "/actions" then page_actions(request)
         else dispatch_get_download(request)
         end
@@ -154,11 +167,16 @@ module PgKeeper
 
       def page_runs(request)
         database = presence(request.params["database"])
-        limit = (request.params["limit"] || 50).to_i.clamp(1, 500)
+        limit = (request.params["limit"] || RUNS_PER_PAGE).to_i.clamp(1, 500)
+        total = @dashboard.runs_count(database: database)
+        pages = [(total.to_f / limit).ceil, 1].max
+        page = (request.params["page"] || 1).to_i.clamp(1, pages)
         html render_view("runs", title: "Runs",
-                                 runs: @dashboard.recent_runs(database: database, limit: limit),
+                                 runs: @dashboard.recent_runs(database: database, limit: limit,
+                                                              offset: (page - 1) * limit),
                                  database: database,
-                                 database_names: @config.databases.map(&:name))
+                                 database_names: @config.databases.map(&:name),
+                                 page: page, pages: pages, total: total, limit: limit)
       end
 
       def page_run(run_id)
@@ -201,8 +219,21 @@ module PgKeeper
         html render_view("schedule", title: "Schedule", plan: @dashboard.schedule_plan)
       end
 
-      def page_backups
-        html render_view("backups", title: "Backups", destinations: @dashboard.sets_by_destination)
+      def page_backups(request)
+        pages_param = request.params["page"].is_a?(Hash) ? request.params["page"] : {}
+        html render_view("backups", title: "Backups",
+                                    destinations: @dashboard.paged_sets_by_destination(
+                                      pages_param, per_page: SETS_PER_PAGE
+                                    ))
+      end
+
+      def page_logs(request)
+        lines = (request.params["lines"] || LOG_LINES_DEFAULT).to_i.clamp(10, LOG_LINES_MAX)
+        level = presence(request.params["level"])
+        tail = @dashboard.log_tail(lines: lines)
+        shown = level ? tail.lines.select { |l| LogHelpers.log_line_level(l) == level } : tail.lines
+        html render_view("logs", title: "Logs",
+                                 tail: tail, shown: shown, lines: lines, level: level)
       end
 
       def page_actions(request)
@@ -216,7 +247,8 @@ module PgKeeper
       def api_runs(request)
         json_response @dashboard.api_runs(
           database: presence(request.params["database"]),
-          limit: (request.params["limit"] || 50).to_i.clamp(1, 500)
+          limit: (request.params["limit"] || 50).to_i.clamp(1, 500),
+          offset: [request.params["offset"].to_i, 0].max
         )
       end
 

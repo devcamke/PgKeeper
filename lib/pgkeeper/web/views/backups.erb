@@ -1,5 +1,5 @@
 <h1>Backups</h1>
-<%- @destinations.each do |(name, sets, error)| -%>
+<%- @destinations.each do |(name, sets, error, pagination)| -%>
 <h2 class="mono"><%= h(name) %></h2>
 <%- if error -%>
 <%= notice(error, kind: :bad) %>
@@ -36,6 +36,7 @@
   <%- end -%>
   <%- end -%>
 </table>
+<%= pager(path: "/backups", unit: "backup sets", state: pagination) %>
 <%- end -%>
 <%- end -%>
 <p class="muted">Restores are deliberately CLI-only — see <span class="mono">docs/RESTORE.md</span>.</p>
