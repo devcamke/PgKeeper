@@ -202,10 +202,11 @@
   .toolbar { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
   .toolbar form { margin: 0; }
 
-  select, input[type="text"] {
+  select, input[type="text"], input[type="password"] {
     padding: 0.35rem 0.55rem; border-radius: 7px; border: 1px solid var(--border-strong);
     background: var(--surface); color: var(--text); font-family: inherit; font-size: 0.88rem;
   }
+  input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   input[type="checkbox"] { accent-color: var(--accent); width: 0.95rem; height: 0.95rem; vertical-align: -2px; }
 
   a { color: var(--accent); text-decoration: none; }
@@ -247,6 +248,15 @@
   .field { margin: 0.6rem 0; }
   .field-label { display: block; font-size: 0.78rem; font-weight: 600; margin: 0 0 0.35rem; color: var(--text); }
   .field select { width: 100%; }
+  .field input { width: 100%; }
+
+  /* The add-a-database form: a lone action card with a field grid inside. */
+  .add-db { max-width: 46rem; margin-bottom: 1rem; }
+  .add-db .form-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 0 1.1rem;
+  }
+  .add-db .field-label .muted { font-weight: 500; }
 
   .chip-set { display: flex; flex-wrap: wrap; gap: 0.4rem; }
   .chip {

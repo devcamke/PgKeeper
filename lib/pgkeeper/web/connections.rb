@@ -41,6 +41,12 @@ module PgKeeper
         probe_all(@config.pitr_clusters, "cluster")
       end
 
+      # Probe one libpq env directly — the add-database flow tests submitted
+      # details through the exact same round-trip before anything is written.
+      def probe(env)
+        @probe.call(env)
+      end
+
       private
 
       def probe_all(targets, kind)

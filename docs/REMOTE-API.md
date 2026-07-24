@@ -172,6 +172,10 @@ lists recent jobs, and `GET /api/destinations` returns the selectable tokens.
 | `GET  /api/runs`             | Recent run history                         |
 | `GET  /api/connections`      | Live-probed database/cluster reachability  |
 
+There is deliberately no config-writing endpoint here: adding a database is a
+browser-only flow (CSRF + confirmation) on the Connections page, so a leaked
+API token can trigger backups but never rewrite where they point.
+
 All endpoints require the dashboard credential; the `POST` action endpoints
 additionally require it to be a **Bearer token**. Put a TLS-terminating reverse
 proxy in front for any non-loopback access — see [SECURITY.md](SECURITY.md).

@@ -125,8 +125,8 @@ module PgKeeper
       # anything unrecognized reads as neutral info.
       def flash_kind(message)
         text = message.to_s.downcase
-        return :warn if text.match?(/nothing was started|required|failed|error|denied/)
-        return :ok if text.match?(/\bstarted\b|queued|dispatched|complete/)
+        return :warn if text.match?(/nothing was (started|written)|required|failed|error|denied/)
+        return :ok if text.match?(/\bstarted\b|\badded\b|queued|dispatched|complete/)
 
         :info
       end

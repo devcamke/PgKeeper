@@ -18,6 +18,15 @@ All notable changes to PgKeeper. Versions map to the milestones in
   `GET /api/connections`. Alongside it, the interface picks up at-a-glance
   stat tiles, a brand mark that links home, keyboard focus outlines on the
   nav, and a footer showing the running version.
+- **Databases can now be added from the web.** The Connections page grows a
+  "Probe & add" form: the submitted details are validated and probed (bounded
+  connect deadline), and only on success is the entry spliced into
+  `pgkeeper.yml` — via the wizard's targeted text surgery, so comments and
+  ERB interpolations survive. The password is used for the probe only; the
+  file gets a `PGKEEPER_<NAME>_PASSWORD` ENV reference, and the updated
+  config is re-validated in full before the atomic write. Browser-only by
+  design (CSRF + confirm; not on the Bearer API). PgKeeper reads config at
+  boot, so the flash reminds you to export the env var and restart.
 
 ### Fixed
 
