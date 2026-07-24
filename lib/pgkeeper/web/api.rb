@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "time"
 
 module PgKeeper
   module Web
@@ -15,7 +16,8 @@ module PgKeeper
     # browser request cannot attach an Authorization header. Each POST starts a
     # job and returns its id (HTTP 202) so callers poll GET /api/jobs/:id.
     #
-    # Relies on the host object's @jobs, @actions, @config and the
+    # Relies on the host object's @jobs, @actions, @config, @connections,
+    # @dashboard and the
     # json_response / presence / presence_list / backup_label helpers.
     module Api
       def dispatch_api_post(request)
@@ -72,6 +74,28 @@ module PgKeeper
       def api_destinations
         rows = @config.destinations.map { |d| { "token" => d.token, "label" => d.label, "type" => d.type } }
         { "destinations" => rows }
+      end
+
+      # The Connections page's data, machine-readable: the same live probes,
+      # minus anything secret (the probes use credentials; the payload — like
+      # the page — never contains one).
+      def api_connections
+        {
+          "generated_at" => Time.now.utc.iso8601,
+          "databases" => @connections.database_rows.map { |row| connection_json(row) },
+          "clusters" => @connections.cluster_rows.map { |row| connection_json(row) },
+          "destinations" => @dashboard.destination_rows.map { |dest| @dashboard.api_destination(dest) }
+        }
+      end
+
+      def connection_json(row)
+        {
+          "name" => row.name, "kind" => row.kind, "light" => row.light,
+          "host" => row.host, "port" => row.port, "database" => row.database,
+          "username" => row.username, "sslmode" => row.sslmode,
+          "connected" => row.ok, "server_version" => row.server_version,
+          "latency_ms" => row.latency_ms, "error" => row.error
+        }
       end
 
       def job_json(job)

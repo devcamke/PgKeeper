@@ -170,6 +170,7 @@ lists recent jobs, and `GET /api/destinations` returns the selectable tokens.
 | `GET  /api/destinations`     | Selectable destination tokens              |
 | `GET  /api/status`           | Per-database + per-destination health      |
 | `GET  /api/runs`             | Recent run history                         |
+| `GET  /api/connections`      | Live-probed database/cluster reachability  |
 
 All endpoints require the dashboard credential; the `POST` action endpoints
 additionally require it to be a **Bearer token**. Put a TLS-terminating reverse

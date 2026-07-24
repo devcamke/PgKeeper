@@ -171,6 +171,14 @@ module PgKeeper
         }
       end
 
+      # Public: the Connections page's API reuses the same destination shape.
+      def api_destination(dest)
+        {
+          "name" => dest.name, "type" => dest.type, "healthy" => dest.healthy,
+          "error" => dest.error, "backup_sets" => dest.set_count, "total_bytes" => dest.total_bytes
+        }
+      end
+
       private
 
       def api_database(row)
@@ -192,13 +200,6 @@ module PgKeeper
           "max_lag_seconds" => snap.max_lag_seconds, "stalled" => snap.stalled?,
           "recovery_window_seconds" => snap.recovery_window_seconds,
           "promised_window_seconds" => snap.promised_window_seconds, "window_short" => snap.window_short?
-        }
-      end
-
-      def api_destination(dest)
-        {
-          "name" => dest.name, "type" => dest.type, "healthy" => dest.healthy,
-          "error" => dest.error, "backup_sets" => dest.set_count, "total_bytes" => dest.total_bytes
         }
       end
 

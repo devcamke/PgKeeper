@@ -27,10 +27,11 @@ module PgKeeper
 
       attr_reader :jobs, :csrf_token
 
-      def initialize(config, logger: PgKeeper.logger, actions: nil)
+      def initialize(config, logger: PgKeeper.logger, actions: nil, connections: nil)
         @config = config
         @logger = logger
         @dashboard = Dashboard.new(config, logger: logger)
+        @connections = connections || Connections.new(config, logger: logger)
         @actions = actions || Actions.new(config, logger: logger)
         @jobs = Jobs.new(logger: logger)
         # One CSRF token per app boot: rotating per-request would need session
@@ -62,12 +63,19 @@ module PgKeeper
         when "/" then page_overview
         when "/runs" then page_runs(request)
         when %r{\A/runs/([^/]+)\z} then page_run(Regexp.last_match(1))
+        when "/connections" then page_connections
         when "/retention" then page_retention
         when "/schedule" then page_schedule
         when "/backups" then page_backups
+        when "/actions" then page_actions(request)
+        else dispatch_get_download(request)
+        end
+      end
+
+      def dispatch_get_download(request)
+        case request.path_info
         when "/download" then download(request)
         when "/download-set" then download_set(request)
-        when "/actions" then page_actions(request)
         else dispatch_get_data(request)
         end
       end
@@ -79,6 +87,7 @@ module PgKeeper
         when "/api/status" then json_response(@dashboard.api_status)
         when "/api/runs" then api_runs(request)
         when "/api/destinations" then json_response(api_destinations)
+        when "/api/connections" then json_response(api_connections)
         when "/api/jobs" then json_response({ "jobs" => @jobs.all.map { |j| job_json(j) } })
         when %r{\A/api/jobs/(\d+)\z} then api_job_status(Regexp.last_match(1).to_i)
         when "/metrics" then metrics_response
@@ -138,6 +147,13 @@ module PgKeeper
         return not_found if rows.empty?
 
         html render_view("run", title: "Run #{run_id}", run_id: run_id, rows: rows)
+      end
+
+      def page_connections
+        html render_view("connections", title: "Connections",
+                                        databases: @connections.database_rows,
+                                        clusters: @connections.cluster_rows,
+                                        destinations: @dashboard.destination_rows)
       end
 
       def page_retention

@@ -5,6 +5,20 @@ All notable changes to PgKeeper. Versions map to the milestones in
 
 ## Unreleased
 
+### Added
+
+- **Web interface refresh, with a new Connections page.** The dashboard gains
+  a **Connections** page (`/connections`): every endpoint PgKeeper talks to —
+  databases, PITR clusters, and storage destinations — probed live on page
+  load with the same bounded `SELECT version()` round-trip `pgkeeper doctor`
+  uses. Each row shows the endpoint, user, TLS mode, auth *source*, server
+  version, and round-trip latency; credentials are never rendered. Probes run
+  concurrently, so one unreachable host costs a single connect timeout, not
+  the sum of them. The same data is machine-readable at
+  `GET /api/connections`. Alongside it, the interface picks up at-a-glance
+  stat tiles, a brand mark that links home, keyboard focus outlines on the
+  nav, and a footer showing the running version.
+
 ### Fixed
 
 Every critical/high finding from the July 2026 engineering review
