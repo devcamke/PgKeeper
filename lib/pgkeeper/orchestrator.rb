@@ -193,10 +193,7 @@ module PgKeeper
       staging = Dir.mktmpdir(".pgkeeper-staging-", workdir)
       artifacts = perform_dump(db, staging, began_at, log)
 
-      status = derive_status(artifacts)
-      duration = (monotonic - started).round(3)
-      log.info("database done", status: status, artifacts: artifacts.length, duration_s: duration)
-      Result.new(database: db.name, status: status, artifacts: artifacts, duration_seconds: duration)
+      completed_result(db, artifacts, started, log)
     rescue StandardError => e
       duration = (monotonic - started).round(3)
       log.error("dump failed", error: e.message, error_class: e.class.name)
@@ -205,12 +202,23 @@ module PgKeeper
       FileUtils.remove_entry(staging) if staging && File.exist?(staging)
     end
 
-    # :success if every artifact reached every destination; :partial if any
-    # destination failed for any artifact; the dump itself failing is handled by
-    # the rescue above.
+    def completed_result(db, artifacts, started, log)
+      status = derive_status(artifacts)
+      error = (Error.new("every destination failed; no copy of the backup was stored") if status == :failure)
+      duration = (monotonic - started).round(3)
+      log.info("database done", status: status, artifacts: artifacts.length, duration_s: duration)
+      Result.new(database: db.name, status: status, artifacts: artifacts, error: error, duration_seconds: duration)
+    end
+
+    # :success if every artifact reached every destination; :partial if some but
+    # not all destinations failed; :failure when nothing was stored anywhere —
+    # the dump existed only in staging (deleted on the way out), so zero copies
+    # survive and "partial" would hide a run with no backup at all. The dump
+    # itself failing is handled by the rescue above.
     def derive_status(artifacts)
       all_dest = artifacts.flat_map { |a| a[:destinations] }
       return :success if all_dest.empty? || all_dest.all?(&:ok?)
+      return :failure if all_dest.none?(&:ok?)
 
       :partial
     end

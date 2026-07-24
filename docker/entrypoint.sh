@@ -20,11 +20,29 @@ daemon-with-web)
   # 0.0.0.0 for a published port to reach it — set web.bind accordingly.
   bundle exec ruby -Ilib bin/pgkeeper web &
   web_pid=$!
+  bundle exec ruby -Ilib bin/pgkeeper daemon &
+  daemon_pid=$!
+
+  # Forward shutdown to both children — the daemon traps TERM and exits
+  # cleanly between jobs. POSIX sh defers traps while a foreground command
+  # runs, so the watch loop below sleeps in the *background* to stay
+  # interruptible (a plain `wait $daemon_pid` would swallow the signal until
+  # the daemon exited on its own, i.e. never).
+  trap 'kill -TERM "$web_pid" "$daemon_pid" 2>/dev/null' INT TERM
+
   # If either process dies, take the container down so the orchestrator
-  # notices — a silently dead scheduler is the failure mode PgKeeper exists
-  # to prevent.
-  trap 'kill "$web_pid" 2>/dev/null' EXIT INT TERM
-  bundle exec ruby -Ilib bin/pgkeeper daemon
+  # notices — a silently dead scheduler *or dashboard* is the failure mode
+  # PgKeeper exists to prevent.
+  while kill -0 "$web_pid" 2>/dev/null && kill -0 "$daemon_pid" 2>/dev/null; do
+    sleep 1 &
+    wait $! || true
+  done
+
+  kill -TERM "$web_pid" "$daemon_pid" 2>/dev/null || true
+  daemon_status=0
+  wait "$daemon_pid" || daemon_status=$?
+  wait "$web_pid" || true
+  exit "$daemon_status"
   ;;
 *)
   pgkeeper "$@"

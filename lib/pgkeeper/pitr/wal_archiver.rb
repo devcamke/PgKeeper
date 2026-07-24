@@ -21,9 +21,19 @@ module PgKeeper
     # supervisor is a separate concern; this is the data path it feeds.
     class WalArchiver
       # A completed WAL segment file name: 24 uppercase hex chars (timeline + log
-      # + segment). Deliberately excludes `.partial` (still filling), backup-label
-      # / history files, and the `archive_status` directory.
+      # + segment). Deliberately excludes `.partial` (still filling) and the
+      # `archive_status` directory.
       SEGMENT = /\A[0-9A-F]{24}\z/
+      # A timeline history file (written on every promote). Must be archived: a
+      # restore with recovery_target_timeline=latest asks for these to discover
+      # post-failover timelines, and archive_command hands them to us too.
+      HISTORY = /\A[0-9A-F]{8}\.history\z/
+      # A backup-history file emitted after pg_backup_stop. Postgres archives it
+      # through the same strictly-ordered archive_command queue, so refusing it
+      # would wedge WAL archiving forever after the first base backup.
+      BACKUP_LABEL = /\A[0-9A-F]{24}\.[0-9A-F]{8}\.backup\z/
+      # Everything archive_command may legitimately hand us.
+      ARCHIVABLE = Regexp.union(SEGMENT, HISTORY, BACKUP_LABEL)
 
       def initialize(config, cluster, logger: PgKeeper.logger, clock: Time)
         @config = config
@@ -35,11 +45,12 @@ module PgKeeper
         @compression = @config.compression
       end
 
-      # Archive one segment file. Returns true only when every destination stored
-      # it (so an archive_command wrapper can exit non-zero and let Postgres retry).
+      # Archive one WAL file (segment, timeline-history, or backup-history name).
+      # Returns true only when every destination stored it (so an archive_command
+      # wrapper can exit non-zero and let Postgres retry).
       def archive_file(path, name = File.basename(path))
-        raise Error, "not a WAL segment name: #{name.inspect}" unless name.match?(SEGMENT)
-        raise Error, "WAL segment not found: #{path}" unless File.file?(path)
+        raise Error, "not an archivable WAL file name: #{name.inspect}" unless name.match?(ARCHIVABLE)
+        raise Error, "WAL file not found: #{path}" unless File.file?(path)
 
         Dir.mktmpdir(".pgkeeper-wal-") do |tmp|
           processed, compression, encryption = process(path, name, tmp)
@@ -53,7 +64,7 @@ module PgKeeper
       # archived. A segment that fails to reach all destinations is kept (retried
       # next drain), never lost.
       def archive_spool(spool_dir)
-        Dir.children(spool_dir).grep(SEGMENT).sort.count do |name|
+        Dir.children(spool_dir).grep(ARCHIVABLE).sort.count do |name|
           path = File.join(spool_dir, name)
           archived = archive_file(path, name)
           File.unlink(path) if archived

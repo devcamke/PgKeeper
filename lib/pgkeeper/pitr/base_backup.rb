@@ -123,20 +123,22 @@ module PgKeeper
           "compression" => "zip", "encryption" => encryption,
           "started_at" => began_at.iso8601, "finished_at" => @clock.now.utc.iso8601,
           "server_version" => server_version(cluster), "timeline" => start[:timeline],
-          "start_lsn" => start[:lsn], "start_segment" => start[:segment]
+          "start_lsn" => start[:lsn], "start_segment" => start[:segment], "end_lsn" => start[:end_lsn]
         }
       end
 
-      # The WAL position the base's recovery begins at — the anchor coupled
-      # retention keeps WAL from. Read from the +backup_manifest+ pg_basebackup
-      # writes (its WAL-Ranges), so no separate query is needed. Best-effort: a
-      # base without it simply won't drive WAL pruning.
+      # The WAL range the base covers: the start position anchors coupled
+      # retention (keep WAL from here), the end LSN is the consistency point —
+      # the earliest instant recovery from this base can stop at, which base
+      # selection compares against LSN targets. Read from the +backup_manifest+
+      # pg_basebackup writes (its WAL-Ranges), so no separate query is needed.
+      # Best-effort: a base without it simply won't drive WAL pruning.
       def start_position(datadir)
         data = JSON.parse(File.read(File.join(datadir, "backup_manifest")))
         range = Array(data["WAL-Ranges"]).first || {}
         lsn = range["Start-LSN"]
         timeline = range["Timeline"]
-        { lsn: lsn, timeline: timeline, segment: Wal.lsn_to_segment(lsn, timeline) }
+        { lsn: lsn, timeline: timeline, segment: Wal.lsn_to_segment(lsn, timeline), end_lsn: range["End-LSN"] }
       rescue StandardError => e
         @logger.warn("could not read base start position (WAL pruning disabled for this base)", error: e.message)
         {}

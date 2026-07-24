@@ -174,6 +174,13 @@ role, matched `pg_basebackup`/`pg_receivewal`).
 Pick the **last good moment**. For a bad 15:00 migration, target `14:59:59+00` —
 recovery stops *before* the target, so aim just ahead of the damage.
 
+PgKeeper picks the newest base backup that can reach the target (for time/LSN
+targets, one whose *consistency point* — the backup's end — is at or before
+it). A named restore point's position can't be inferred from the catalog, so
+`--to-name` starts from the newest base; if the point was created **before**
+that base, pin an older one explicitly with `--base LABEL` (a label or prefix
+as shown by `pgkeeper list`, e.g. `--base 2026-07-21`).
+
 ### 3. Stage the recovery data directory
 
 Point `--data-dir` at an **empty** directory (PgKeeper refuses a non-empty one

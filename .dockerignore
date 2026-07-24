@@ -10,3 +10,8 @@ Gemfile.lock
 .rubocop.yml
 .mise.toml
 docker-compose*.yml
+# Never bake a local config into the image: /app/pgkeeper.yml is the FIRST
+# config search path, so a baked copy silently shadows the operator's mounted
+# /etc/pgkeeper/pgkeeper.yml (and may embed secrets in image layers).
+pgkeeper.yml
+config/pgkeeper.yml

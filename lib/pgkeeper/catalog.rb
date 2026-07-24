@@ -19,8 +19,10 @@ module PgKeeper
       :size_bytes, :checksum, :compression, :encryption, :dump_format,
       :verified_at, :verified_tier,
       # PITR (Phase 12): a base backup records the LSN/segment its recovery
-      # begins at; a WAL artifact records its own segment name.
-      :start_lsn, :start_segment, :segment,
+      # begins at, plus its end LSN and finish time (the consistency point —
+      # the earliest moment recovery from it can stop at); a WAL artifact
+      # records its own segment name.
+      :start_lsn, :start_segment, :segment, :end_lsn, :finished_at,
       keyword_init: true
     )
 
@@ -89,7 +91,8 @@ module PgKeeper
         compression: data["compression"], encryption: data["encryption"],
         dump_format: data["dump_format"],
         verified_at: parse_time(data["verified_at"]), verified_tier: data["verified_tier"],
-        start_lsn: data["start_lsn"], start_segment: data["start_segment"], segment: data["segment"]
+        start_lsn: data["start_lsn"], start_segment: data["start_segment"], segment: data["segment"],
+        end_lsn: data["end_lsn"], finished_at: parse_time(data["finished_at"])
       )
     end
 

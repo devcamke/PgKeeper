@@ -24,20 +24,28 @@ module PgKeeper
 
     # Run the scheduler loop. +max_ticks+ bounds the number of iterations (tests
     # pass a finite value; production leaves it nil to run forever). Returns the
-    # count of fires performed.
-    def run(max_ticks: nil)
+    # count of fires performed. +handle_signals+ installs INT/TERM traps so the
+    # loop exits cleanly between jobs — as Docker PID 1 an unhandled SIGTERM is
+    # ignored outright and every `docker stop` ends in SIGKILL, possibly
+    # mid-backup. (Off by default so tests don't clobber the process's traps.)
+    def run(max_ticks: nil, handle_signals: false)
       raise Error, "no schedules configured; set `schedule:` in your config" if @entries.empty?
 
-      schedule = @entries.to_h { |entry| [entry, entry.schedule.next_time(from: now)] }
+      @stop = false
+      trap_signals if handle_signals
+      schedule = @entries.to_h { |entry| [entry, next_fire_time(entry, now)] }
       @logger.info("daemon started", schedules: @entries.length)
 
       fires = 0
       ticks = 0
-      until max_ticks && ticks >= max_ticks
+      until @stop || (max_ticks && ticks >= max_ticks)
         ticks += 1
         sleep_until(schedule.values.min)
+        break if @stop
+
         fires += fire_due(schedule)
       end
+      @logger.info("daemon stopping", fires: fires) if @stop
       fires
     end
 
@@ -59,9 +67,36 @@ module PgKeeper
         run_entry(entry)
         fired += 1
         # Advance past the current second so the same tick isn't re-fired.
-        schedule[entry] = entry.schedule.next_time(from: now + 1)
+        schedule[entry] = next_fire_time(entry, now + 1)
       end
       fired
+    end
+
+    # fugit/et-orbi can raise for instants inside the DST fall-back (repeated)
+    # hour — "Cannot determine timezone from EDT". Unrescued, that crash kills
+    # the daemon for the night: the exact silently-dead-scheduler failure this
+    # class exists to prevent. Nudge the starting instant forward until the
+    # computation succeeds; the ambiguous window is at most an hour, so a few
+    # 15-minute steps always clear it. If everything fails, try again in an
+    # hour rather than dying.
+    def next_fire_time(entry, from)
+      attempt = from
+      8.times do
+        return entry.schedule.next_time(from: attempt)
+      rescue StandardError => e
+        @logger.warn("could not compute next fire time; advancing past ambiguous clock window",
+                     schedule: entry.label, from: attempt.to_s, error: e.message)
+        attempt += 900
+      end
+      from + 3600
+    end
+
+    # Both signals request the same thing: finish the job in flight (traps only
+    # flip a flag; an interrupted sleep re-checks it) and exit the loop.
+    def trap_signals
+      %w[INT TERM].each do |sig|
+        Signal.trap(sig) { @stop = true }
+      end
     end
 
     def run_entry(entry)
@@ -77,6 +112,7 @@ module PgKeeper
       case entry.action
       when :verify then run_verify(entry)
       when :prune then run_prune(entry)
+      when :basebackup then run_basebackup(entry)
       else run_backup(entry)
       end
     end
@@ -92,6 +128,10 @@ module PgKeeper
 
     def run_prune(entry)
       Pruner.new(@config, logger: @logger).prune(apply: entry.flags.include?("--apply"), only: entry.only)
+    end
+
+    def run_basebackup(entry)
+      PITR::BaseBackup.new(@config, logger: @logger).run(only: entry.only)
     end
   end
 end
