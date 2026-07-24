@@ -3,22 +3,24 @@
 require "cgi"
 require "time"
 
+require "pgkeeper/web/log_helpers"
+require "pgkeeper/web/paging_helpers"
+
 module PgKeeper
   module Web
     # Formatting helpers shared by every ERB view. Everything dynamic goes
     # through {#h} — no credential or user-controlled string is ever rendered
     # raw.
     module ViewHelpers
+      include LogHelpers
+      include PagingHelpers
+
       UNITS = %w[B KB MB GB TB].freeze
 
-      def h(value)
-        CGI.escapeHTML(value.to_s)
-      end
+      def h(value) = CGI.escapeHTML(value.to_s)
 
       # URL-escape a query-string value.
-      def u(value)
-        CGI.escape(value.to_s)
-      end
+      def u(value) = CGI.escape(value.to_s)
 
       def human_size(bytes)
         return "-" if bytes.nil?

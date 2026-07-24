@@ -169,8 +169,9 @@ set a recovery SLA you can keep.
   - **Overview**: per-database traffic lights (last run, last verified age, next scheduled
     run), size-trend sparklines that make a suddenly-smaller dump visible, and a
     per-destination health grid.
-  - **Runs**: timeline of every recorded run with a detail page per run (duration,
-    per-destination status, stderr on failures).
+  - **Runs**: paginated timeline of every recorded run — page back through the whole
+    history — with a detail page per run (duration, per-destination status, stderr on
+    failures).
   - **Connections**: everything PgKeeper talks to, live-probed as the page loads —
     databases, PITR clusters, and storage destinations — plus a probe-first form that
     adds a database to the config only after its connection test passes.
@@ -178,7 +179,11 @@ set a recovery SLA you can keep.
   - **Schedule**: the resolved plan (jobs, cron, next fire times) with per-job
     **Run now** buttons that share the scheduled runs' lock.
   - **Backups**: browse artifacts across destinations and download them (allowlisted
-    against the catalog — the endpoint can't be steered at arbitrary paths).
+    against the catalog — the endpoint can't be steered at arbitrary paths); each
+    destination's table paginates independently.
+  - **Logs**: the tail of the operational log (`<workdir>/pgkeeper.log` — where the
+    installed cron lines and `--log-file` write), with line-count and level filters;
+    only a bounded window is ever read from the end of the file.
   - **Actions**: trigger backup / verify / prune / test-notification / doctor from the
     browser, and pick which destinations a backup targets. Every action needs a CSRF token
     plus an explicit confirmation, and runs through the same lock as cron — never a second
@@ -274,6 +279,11 @@ job's cron and next fire times, with a **Run now** button that goes through the 
 as the scheduled runs:
 
 ![PgKeeper dashboard — schedule](docs/images/dashboard-schedule.png)
+
+**Logs** — the tail of the operational log, level-colorized and filterable, read as a
+bounded window from the end of the file:
+
+![PgKeeper dashboard — logs](docs/images/dashboard-logs.png)
 
 **Actions** — trigger backup / verify / prune / test-notification / doctor from the
 browser; each needs a CSRF token plus an explicit confirmation. Restores are deliberately
