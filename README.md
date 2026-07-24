@@ -12,7 +12,8 @@ are actually restorable, reports status via email, and includes an optional web 
 optionally encrypted, fanned out to multiple destinations, pruned by a retention policy,
 **verifiably restorable**, **reported on** (run-history, email/webhook alerts, dead-man's
 switch), **scheduled** (cron/systemd installers or a built-in daemon), **observable in a
-browser** (`pgkeeper web`), and **deployable with Docker**. See [PLAN.md](PLAN.md) for the
+browser** (`pgkeeper web`), and **deployable with Docker Compose or
+[Kamal](https://kamal-deploy.org)**. See [PLAN.md](PLAN.md) for the
 full multi-phase build plan, [CHANGELOG.md](CHANGELOG.md) for what shipped when, and
 [docs/RESTORE.md](docs/RESTORE.md) for the restore runbook.
 
@@ -312,20 +313,41 @@ storage:
 See [`config/pgkeeper.example.yml`](config/pgkeeper.example.yml) for the full annotated
 schema.
 
-## Docker
+## Deployment
 
-The image bundles the CLI, the scheduling daemon, and the dashboard (plus the
+One container image bundles the CLI, the scheduling daemon, and the dashboard (plus the
 S3 SDK and `postgresql-client`):
 
 ```sh
 docker build -t pgkeeper .
 docker run --rm -v ./pgkeeper.yml:/etc/pgkeeper/pgkeeper.yml:ro pgkeeper doctor
-
-# Daemon + dashboard together, wired next to a database:
-cp docker-compose.example.yml docker-compose.yml   # then edit
-export POSTGRES_PASSWORD=... PGKEEPER_APP_PASSWORD=... PGKEEPER_WEB_TOKEN=...
-docker compose up -d
 ```
+
+Three ready-made ways to run it:
+
+- **Docker Compose, next to a new database** —
+  [`docker-compose.example.yml`](docker-compose.example.yml) starts Postgres and
+  PgKeeper (daemon + dashboard) together; the classic single-app stack:
+
+  ```sh
+  cp docker-compose.example.yml docker-compose.yml   # then edit
+  export POSTGRES_PASSWORD=... PGKEEPER_APP_PASSWORD=... PGKEEPER_WEB_TOKEN=...
+  docker compose up -d
+  ```
+
+- **Docker Compose, on a server with existing databases** — [`deploy/`](deploy/) is an
+  edit-and-go kit for the common real-world case: a server already running several
+  applications with their own Postgres databases, and one PgKeeper container backing
+  them all up on schedule, with the dashboard for manual runs. Covers the backup role,
+  reaching host vs. containerized databases, and day-2 operations. Walkthrough in
+  [`deploy/README.md`](deploy/README.md).
+
+- **[Kamal](https://kamal-deploy.org), from your workstation** —
+  [`config/deploy.yml`](config/deploy.yml) ships the same container over SSH: build
+  locally, push to a registry, deploy/rollback with one command; a pre-deploy hook
+  syncs `deploy/pgkeeper.yml` to the host on every release, and a commented
+  `proxy:` block serves the dashboard on a domain with automatic TLS. Walkthrough in
+  [`deploy/KAMAL.md`](deploy/KAMAL.md).
 
 ## Documentation
 
@@ -347,6 +369,10 @@ docker compose up -d
   Backblaze B2, Cloudflare R2, Spaces, Dropbox, Google Drive, SharePoint/OneDrive.
 - [docs/REMOTE-API.md](docs/REMOTE-API.md) — triggering backups remotely and
   selecting destinations, from the CLI, the web API, and the dashboard.
+- [deploy/README.md](deploy/README.md) — Docker Compose deployment on a server that
+  already runs your applications and their databases.
+- [deploy/KAMAL.md](deploy/KAMAL.md) — deploying the same container from your
+  workstation with Kamal.
 - [CHANGELOG.md](CHANGELOG.md) — release history mapped to plan phases.
 
 ## Development
