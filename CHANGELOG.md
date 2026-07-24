@@ -15,7 +15,8 @@ All notable changes to PgKeeper. Versions map to the milestones in
   version, and round-trip latency; credentials are never rendered. Probes run
   concurrently, so one unreachable host costs a single connect timeout, not
   the sum of them. The same data is machine-readable at
-  `GET /api/connections`. Alongside it, the interface picks up at-a-glance
+  `GET /api/connections`. Alongside it, the interface picks up an orange
+  brand palette (tuned separately for light and dark themes), at-a-glance
   stat tiles, a brand mark that links home, keyboard focus outlines on the
   nav, and a footer showing the running version.
 - **Databases can now be added from the web.** The Connections page grows a
