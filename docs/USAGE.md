@@ -429,6 +429,8 @@ inside your app, though — backups shouldn't share fate with the app process.
 |---|---|
 | `doctor`: `pg_dump: not found on PATH` | Install the PostgreSQL client tools (`postgresql-client`). |
 | `doctor` warns `pg_dump X is older than server Y` | Upgrade the client — an older pg_dump against a newer server is a silent-corruption footgun. |
+| `✗ <db>: pg_dump exited 1` with no further detail | The summary carries only the exit code; pg_dump's actual stderr is streamed at debug level. Re-run with `--log-level debug` and read the `msg=pg_dump stderr=...` lines. |
+| `fe_sendauth: no password supplied` | The password env var your config references (the wizard names it `PGKEEPER_<DB_NAME>_PASSWORD` and prints it when it writes the config) isn't set in the shell running PgKeeper. `export` it — and persist it wherever scheduled runs execute (shell profile, systemd unit `Environment=`, or the crontab). |
 | `another PgKeeper run holds the lock` | A run is already in progress (or a dead run's process still holds the flock). Locks release when the process exits; find it with `fuser <workdir>/.pgkeeper.lock`. |
 | `invalid configuration ... (N problem(s))` | Every problem is listed; fix them all at once. `pgkeeper validate` re-checks without touching anything. |
 | Backup reports `partial` (exit 1) | The dump succeeded but at least one destination failed — check the per-destination lines in the output / run detail. The other destinations still have the backup. |
