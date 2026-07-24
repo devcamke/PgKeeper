@@ -38,6 +38,16 @@ module PgKeeper
       end
     end
 
+    def test_list_matches_literally_when_root_and_prefix_contain_glob_metacharacters
+      adapter = Storage::Local.new(root: File.join(@root, "glob [set] {a,b}"), logger: null_logger)
+      with_local_file("data") do |src, _dir|
+        adapter.upload(src, "db/app[1].dump")
+
+        assert_equal ["db/app[1].dump"], adapter.list("db/").map(&:path)
+        assert_equal ["db/app[1].dump"], adapter.list("db/app[1]").map(&:path)
+      end
+    end
+
     def test_factory_builds_local
       adapter = Storage.build({ "type" => "local", "path" => @root }, logger: null_logger)
 

@@ -56,10 +56,17 @@ module PgKeeper
 
       def do_list(prefix)
         base = absolute(prefix)
-        pattern = File.directory?(base) ? File.join(base, "**", "*") : "#{base}*"
+        escaped = glob_escape(base)
+        pattern = File.directory?(base) ? File.join(escaped, "**", "*") : "#{escaped}*"
         Dir.glob(pattern).select { |p| File.file?(p) }.sort.map do |path|
           Entry.new(path: relative(path), size_bytes: File.size(path))
         end
+      end
+
+      # Dir.glob treats  * ? [ ] { } \  as pattern syntax; the root and prefix
+      # are literal paths, not patterns.
+      def glob_escape(path)
+        path.gsub(/[\\{}\[\]*?]/) { |char| "\\#{char}" }
       end
 
       def remote_size(remote_path)

@@ -84,6 +84,36 @@ module PgKeeper
       end
     end
 
+    def test_expired_token_is_reminted_before_reuse
+      # expires_in below the refresh margin makes each minted token immediately
+      # stale, so every use must exchange the JWT again.
+      stub_request(:post, "https://oauth2.googleapis.com/token")
+        .to_return(json_ok("access_token" => "gd-token", "expires_in" => 30, "token_type" => "Bearer"))
+
+      2.times { adapter.healthcheck }
+
+      assert_requested :post, "https://oauth2.googleapis.com/token", times: 2
+    end
+
+    def test_fresh_token_is_reused_across_operations
+      2.times { adapter.healthcheck }
+
+      assert_requested :post, "https://oauth2.googleapis.com/token", times: 1
+    end
+
+    def test_upload_succeeds_when_the_size_check_gets_a_5xx
+      # A transient 5xx on the post-upload size check must degrade to "size
+      # unknown" (verification skipped), not fail a fully-successful upload.
+      stub_request(:get, %r{https://www\.googleapis\.com/drive/v3/files/[^/?]+})
+        .to_return(status: 500, body: "boom")
+      with_local_file("data") do |src, _dir|
+        result = adapter.upload(src, "db/app.dump")
+
+        assert_equal 4, result.size_bytes
+        assert_equal "data", @files["db/app.dump"][:bytes]
+      end
+    end
+
     def test_missing_credentials_rejected
       assert_raises(ConfigError) { Storage::GoogleDrive.new(folder_id: "FOLDER", logger: null_logger) }
     end

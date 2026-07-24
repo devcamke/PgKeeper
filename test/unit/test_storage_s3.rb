@@ -77,6 +77,18 @@ module PgKeeper
       assert_operator captured[:object_lock_retain_until_date], :<, Time.now + (31 * 86_400)
     end
 
+    def test_object_lock_rejects_missing_or_nonpositive_retain_days
+      # retain_days coerced to 0 would mean retain-until = now: Object Lock
+      # configured but protecting nothing. Misconfiguration must fail loudly.
+      [{ "mode" => "COMPLIANCE" },
+       { "mode" => "COMPLIANCE", "retain_days" => 0 },
+       { "mode" => "COMPLIANCE", "retain_days" => "soon" }].each do |cfg|
+        assert_raises(ConfigError, "object_lock #{cfg.inspect} should be rejected") do
+          Storage::S3.with_client(@client, bucket: "backups", prefix: "pgk", logger: null_logger, object_lock: cfg)
+        end
+      end
+    end
+
     def test_uploads_carry_no_object_lock_by_default
       captured = {}
       client = stubbed_client({})

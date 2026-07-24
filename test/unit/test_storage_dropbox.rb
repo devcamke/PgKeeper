@@ -63,6 +63,30 @@ module PgKeeper
       assert_requested :post, "https://api.dropboxapi.com/oauth2/token"
     end
 
+    def test_expired_access_token_is_reminted_before_reuse
+      # expires_in below the refresh margin makes each minted token immediately
+      # stale, so every use must exchange the refresh token again.
+      stub_request(:post, "https://api.dropboxapi.com/oauth2/token")
+        .to_return(json_ok("access_token" => "tok", "expires_in" => 30))
+      adapter = Storage::Dropbox.new(root: "pgk", refresh_token: "rt", app_key: "ak", app_secret: "as",
+                                     logger: null_logger)
+
+      2.times { adapter.healthcheck }
+
+      assert_requested :post, "https://api.dropboxapi.com/oauth2/token", times: 2
+    end
+
+    def test_fresh_access_token_is_reused_across_operations
+      stub_request(:post, "https://api.dropboxapi.com/oauth2/token")
+        .to_return(json_ok("access_token" => "tok", "expires_in" => 14_400))
+      adapter = Storage::Dropbox.new(root: "pgk", refresh_token: "rt", app_key: "ak", app_secret: "as",
+                                     logger: null_logger)
+
+      2.times { adapter.healthcheck }
+
+      assert_requested :post, "https://api.dropboxapi.com/oauth2/token", times: 1
+    end
+
     def test_construction_requires_credentials
       assert_raises(ConfigError) { Storage::Dropbox.new(root: "pgk", logger: null_logger) }
     end

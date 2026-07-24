@@ -9,11 +9,15 @@ module PgKeeper
     class SharePoint < Base
       # Fetches Microsoft Graph access tokens with the OAuth2 client-credentials
       # grant — no SDK. The app-only token is minted from the tenant's app
-      # registration (`client_id` + `client_secret`) and cached for the process
-      # (backup runs are short).
+      # registration (`client_id` + `client_secret`) and cached until shortly
+      # before its reported expiry, then re-minted — Graph tokens last ~1h, and
+      # a large upload can outlive one.
       class AppToken
         AUTHORITY = "https://login.microsoftonline.com"
         SCOPE = "https://graph.microsoft.com/.default"
+        # Refresh this many seconds before the reported expiry so a token never
+        # goes stale mid-operation.
+        TOKEN_REFRESH_MARGIN = 60
 
         def initialize(tenant_id:, client_id:, client_secret:, timeout: 60)
           missing = { tenant_id: tenant_id, client_id: client_id, client_secret: client_secret }
@@ -24,10 +28,12 @@ module PgKeeper
           @client_id = client_id
           @client_secret = client_secret
           @timeout = timeout
+          @token = nil
         end
 
         def token
-          @token ||= request_token
+          request_token if @token.nil? || Time.now >= @refresh_at
+          @token
         end
 
         private
@@ -43,7 +49,9 @@ module PgKeeper
             raise StorageError, "sharepoint token request failed: HTTP #{code} #{response.body}"
           end
 
-          JSON.parse(response.body).fetch("access_token")
+          body = JSON.parse(response.body)
+          @refresh_at = Time.now + body["expires_in"].to_i - TOKEN_REFRESH_MARGIN
+          @token = body.fetch("access_token")
         end
 
         def perform(uri, request)

@@ -89,10 +89,16 @@ module PgKeeper
         }
       end
 
+      # A missing or malformed retain_days must fail loudly: coercing it to 0
+      # would set retain-until to "now" — Object Lock configured but protecting
+      # nothing.
       def normalize_object_lock(cfg)
         return nil if cfg.nil?
 
-        { mode: cfg["mode"] || cfg[:mode], retain_days: (cfg["retain_days"] || cfg[:retain_days]).to_i }
+        days = Integer(cfg["retain_days"] || cfg[:retain_days], exception: false)
+        raise ConfigError, "s3 object_lock requires a positive integer `retain_days`" unless days&.positive?
+
+        { mode: cfg["mode"] || cfg[:mode], retain_days: days }
       end
 
       def transfer_manager

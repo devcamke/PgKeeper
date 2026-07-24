@@ -74,11 +74,19 @@ module PgKeeper
       # List stored objects under +prefix+ as an array of {Entry}.
       def list(prefix = "")
         with_retries("list #{prefix}") { do_list(prefix) }
+      rescue StorageError
+        raise
+      rescue StandardError => e
+        raise StorageError.new("#{name}: list of #{prefix} failed: #{e.message}", destination: name)
       end
 
       # Delete +remote_path+.
       def delete(remote_path)
         with_retries("delete #{remote_path}") { do_delete(remote_path) }
+      rescue StorageError
+        raise
+      rescue StandardError => e
+        raise StorageError.new("#{name}: delete of #{remote_path} failed: #{e.message}", destination: name)
       end
 
       # Cheap liveness/permission probe. Returns true, or raises {StorageError}.

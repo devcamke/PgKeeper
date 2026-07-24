@@ -109,6 +109,8 @@ module PgKeeper
         return nil if id.nil?
 
         api_get("/drive/v3/files/#{id}", { "fields" => "size", "supportsAllDrives" => "true" })["size"]&.to_i
+      rescue ApiError
+        nil
       end
 
       def transient_error?(error)

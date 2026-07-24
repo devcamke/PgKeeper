@@ -60,6 +60,24 @@ module PgKeeper
       end
     end
 
+    def test_expired_graph_token_is_reminted_before_reuse
+      # expires_in below the refresh margin makes each minted token immediately
+      # stale, so every use must request a new one.
+      token_url = %r{https://login\.microsoftonline\.com/.+/oauth2/v2\.0/token}
+      stub_request(:post, token_url)
+        .to_return(json_ok("access_token" => "graph-token", "expires_in" => 30, "token_type" => "Bearer"))
+
+      2.times { adapter.healthcheck }
+
+      assert_requested :post, token_url, times: 2
+    end
+
+    def test_fresh_graph_token_is_reused_across_operations
+      2.times { adapter.healthcheck }
+
+      assert_requested :post, %r{https://login\.microsoftonline\.com/.+/oauth2/v2\.0/token}, times: 1
+    end
+
     def test_missing_credentials_rejected
       assert_raises(ConfigError) { Storage::SharePoint.new(drive_id: DRIVE, logger: null_logger) }
     end

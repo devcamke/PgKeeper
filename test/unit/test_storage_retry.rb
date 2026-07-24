@@ -3,8 +3,9 @@
 require "test_helper"
 
 module PgKeeper
-  # Exercises the retry/backoff behavior in Storage::Base with a tiny fake
-  # adapter, so we don't depend on any real backend's failure modes.
+  # Exercises the retry/backoff and error-wrapping behavior in Storage::Base
+  # with tiny fake adapters, so we don't depend on any real backend's failure
+  # modes.
   class TestStorageRetry < Minitest::Test
     include TestHelpers
 
@@ -68,6 +69,33 @@ module PgKeeper
         assert_raises(StorageError) { adapter.upload(path, "x.dump") }
         assert_equal 1, adapter.attempts, "non-transient errors must not retry"
       end
+    end
+
+    # Raises a backend-native (non-StorageError) exception from every primitive,
+    # so we can assert the public interface wraps it — callers that rescue only
+    # StorageError must be isolated from raw SDK/Net::HTTP errors.
+    class NativeFailureAdapter < Storage::Base
+      def name = "native"
+
+      private
+
+      def do_list(_prefix) = raise(IOError, "socket closed")
+      def do_delete(_remote) = raise("boom")
+      def transient_error?(_error) = false
+    end
+
+    def test_list_wraps_native_errors_in_storage_error
+      error = assert_raises(StorageError) { NativeFailureAdapter.new(logger: null_logger).list("db/") }
+
+      assert_equal "native", error.destination
+      assert_includes error.message, "socket closed"
+    end
+
+    def test_delete_wraps_native_errors_in_storage_error
+      error = assert_raises(StorageError) { NativeFailureAdapter.new(logger: null_logger).delete("db/x.dump") }
+
+      assert_equal "native", error.destination
+      assert_includes error.message, "boom"
     end
   end
 end

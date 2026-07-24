@@ -16,7 +16,7 @@ module PgKeeper
     #
     # Auth is either a long-lived +access_token+, or a +refresh_token+ plus the
     # app's +app_key+/+app_secret+ — the modern short-lived-token flow, exchanged
-    # for an access token on first use and cached for the process.
+    # for an access token on first use and re-minted shortly before it expires.
     class Dropbox < Base
       API_HOST = "api.dropboxapi.com"
       CONTENT_HOST = "content.dropboxapi.com"
@@ -25,6 +25,9 @@ module PgKeeper
       SINGLE_UPLOAD_LIMIT = 150 * 1024 * 1024
       SESSION_CHUNK = 96 * 1024 * 1024
       TIMEOUT = 60
+      # Minted access tokens are short-lived (~4h); refresh this many seconds
+      # before the reported expiry so a token never goes stale mid-operation.
+      TOKEN_REFRESH_MARGIN = 60
 
       # A non-2xx Dropbox response. Carries the HTTP status so {#transient_error?}
       # can decide whether the operation is worth retrying.
@@ -48,6 +51,7 @@ module PgKeeper
         @single_upload_limit = single_upload_limit
         @session_chunk = session_chunk
         @timeout = timeout
+        @bearer_token = nil
         validate_credentials!
       end
 
@@ -251,17 +255,22 @@ module PgKeeper
       # -- auth --------------------------------------------------------------
 
       def bearer_token
-        @bearer_token ||= @access_token || fetch_access_token
+        return @access_token if @access_token
+
+        fetch_access_token if @bearer_token.nil? || Time.now >= @bearer_refresh_at
+        @bearer_token
       end
 
-      # Exchange a long-lived refresh token for a short-lived access token.
+      # Exchange a long-lived refresh token for a short-lived access token,
+      # remembering when to mint the next one from the response's expires_in.
       def fetch_access_token
         uri = URI("https://#{API_HOST}/oauth2/token")
         request = Net::HTTP::Post.new(uri)
         request.basic_auth(@app_key, @app_secret)
         request.set_form_data("grant_type" => "refresh_token", "refresh_token" => @refresh_token)
         body = parse_json(perform(uri, request), "oauth2/token")
-        body.fetch("access_token")
+        @bearer_refresh_at = Time.now + body["expires_in"].to_i - TOKEN_REFRESH_MARGIN
+        @bearer_token = body.fetch("access_token")
       end
 
       # -- path mapping ------------------------------------------------------
