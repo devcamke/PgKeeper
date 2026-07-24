@@ -107,20 +107,37 @@ module PgKeeper
       def dispatch_post(request)
         return dispatch_api_post(request) if request.path_info.start_with?("/api/")
 
-        return forbidden("invalid or missing CSRF token") unless csrf_ok?(request)
-        unless confirmed?(request)
-          return redirect_msg("confirmation checkbox is required — nothing was started",
-                              path: flash_path(request))
-        end
+        rejection = browser_post_guard(request)
+        return rejection if rejection
 
         @logger.info("dashboard action requested", caller: caller_name(request), action: request.path_info)
+        return dispatch_post_connections(request) if request.path_info.start_with?("/connections/")
+
         case request.path_info
         when "/actions/backup" then act_backup(request)
         when "/actions/verify" then act_verify(request)
         when "/actions/prune" then act_prune(request)
         when "/actions/test-notification" then act("test-notification") { @actions.test_notification }
         when "/actions/doctor" then act("doctor") { @actions.doctor }
+        else not_found
+        end
+      end
+
+      # The browser-POST gates: CSRF for everything; the confirmation checkbox
+      # for everything except the connection test, which starts nothing and
+      # writes nothing. Returns the rejection response, or nil to proceed.
+      def browser_post_guard(request)
+        return forbidden("invalid or missing CSRF token") unless csrf_ok?(request)
+        return nil if request.path_info == "/connections/test" || confirmed?(request)
+
+        redirect_msg("confirmation checkbox is required — nothing was started",
+                     path: flash_path(request))
+      end
+
+      def dispatch_post_connections(request)
+        case request.path_info
         when "/connections/add" then act_add_database(request)
+        when "/connections/test" then act_test_connection(request)
         else not_found
         end
       end
@@ -166,6 +183,11 @@ module PgKeeper
       # {DatabaseAdmin} for the full posture.
       def act_add_database(request)
         result = @database_admin.add(request.params)
+        redirect_msg(result.message, path: "/connections")
+      end
+
+      def act_test_connection(request)
+        result = @database_admin.test(request.params)
         redirect_msg(result.message, path: "/connections")
       end
 

@@ -200,6 +200,55 @@ module PgKeeper
       assert_includes body, "notice-ok", "the added flash renders as a success notice"
     end
 
+    def test_test_connection_probes_without_confirmation_and_writes_nothing
+      before = File.read(@path)
+      params = add_params("name" => "", "password" => "pw-secret")
+      params.delete("confirm")
+
+      post "/connections/test", params
+
+      assert_equal 303, last_response.status
+      location = Rack::Utils.unescape(last_response.headers["location"])
+
+      assert_match %r{\A/connections\?msg=connection succeeded}, location
+      assert_match(/PostgreSQL 17\.2/, location)
+      assert_match(/9 ms round trip/, location)
+      assert_match(/config untouched/, location)
+
+      assert_equal "pw-secret", @probed_envs.first["PGPASSWORD"], "the probe authenticates for real"
+      assert_equal before, File.read(@path), "a test must never write"
+    end
+
+    def test_test_connection_reports_failure_and_still_requires_csrf
+      failing = ->(_env) { { ok: false, error: "Connection refused" } }
+      failing_app = app_for(@config, probe: failing)
+      session = Rack::Test::Session.new(failing_app)
+
+      session.post("/connections/test", "_csrf" => failing_app.csrf_token, "host" => "down.internal")
+
+      location = Rack::Utils.unescape(session.last_response.headers["location"])
+
+      assert_match(/connection failed: Connection refused/, location)
+
+      session.post("/connections/test", "host" => "down.internal")
+
+      assert_equal 403, session.last_response.status, "the CSRF gate still holds for tests"
+    end
+
+    def test_test_connection_rejects_invalid_input_before_probing
+      post "/connections/test", "_csrf" => @app.csrf_token, "port" => "70000"
+
+      assert_match(/port must be/, Rack::Utils.unescape(last_response.headers["location"]))
+      assert_empty @probed_envs
+    end
+
+    def test_test_connection_flash_renders_as_success
+      get "/connections", "msg" => "connection succeeded — PostgreSQL 17.2 (probe only; config untouched)"
+
+      assert_includes last_response.body, "notice-ok"
+      assert_includes last_response.body, %(formaction="/connections/test"), "the form offers a test button"
+    end
+
     def test_add_is_not_reachable_through_the_bearer_api
       header "Authorization", "Bearer #{WebHelpers::TOKEN}"
       post "/api/connections/add", { "name" => "sneaky" }

@@ -58,15 +58,37 @@ module PgKeeper
         write(entry, password)
       end
 
+      # Probe the submitted details and report — the form's "Test connection"
+      # button. Nothing is validated against the config (a name is optional and
+      # may collide) and nothing is ever written.
+      def test(params)
+        entry, password, problems = build_entry(params, require_name: false)
+        return failure(problems.join("; ")) unless problems.empty?
+
+        probe = @connections.probe(probe_env(entry, password))
+        unless probe[:ok]
+          return Result.new(ok: false, message: "connection failed: #{probe[:error] || 'unknown error'}")
+        end
+
+        Result.new(ok: true, message: "connection succeeded#{probe_detail(probe)} (probe only; config untouched)")
+      end
+
       private
+
+      def probe_detail(probe)
+        detail = [probe[:server_version],
+                  probe[:latency_ms] && "#{probe[:latency_ms]} ms round trip"].compact.join(", ")
+        detail.empty? ? "" : " — #{detail}"
+      end
 
       # -- validation --------------------------------------------------------
 
-      def build_entry(params)
+      def build_entry(params, require_name: true)
         problems = []
-        name = validate_name(params["name"].to_s.strip, problems)
+        name = params["name"].to_s.strip
+        validate_name(name, problems) if require_name
         entry = {
-          "name" => name,
+          "name" => presence(name),
           "host" => presence(params["host"]),
           "port" => validate_port(params["port"], problems),
           "database" => presence(params["database"]),

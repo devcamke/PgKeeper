@@ -26,7 +26,10 @@ All notable changes to PgKeeper. Versions map to the milestones in
   file gets a `PGKEEPER_<NAME>_PASSWORD` ENV reference, and the updated
   config is re-validated in full before the atomic write. Browser-only by
   design (CSRF + confirm; not on the Bearer API). PgKeeper reads config at
-  boot, so the flash reminds you to export the env var and restart.
+  boot, so the flash reminds you to export the env var and restart. A
+  "Test connection" button probes the same form's settings and reports server
+  version + latency without writing anything (CSRF-gated, but exempt from the
+  confirmation toggle since it mutates nothing).
 
 ### Fixed
 

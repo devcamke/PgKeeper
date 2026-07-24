@@ -104,10 +104,17 @@ exactly the libpq settings a real run would use. Credentials stay in
   </div>
   <div class="action-foot">
     <label class="switch"><input type="checkbox" name="confirm"><span class="slider"></span><span class="switch-label">Confirm</span></label>
-    <button type="submit">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-      Probe &amp; add
-    </button>
+    <span class="btn-row">
+      <button type="submit" class="ghost" formaction="/connections/test" formnovalidate
+              title="Probe with these settings — writes nothing, no confirmation needed">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2 6 4-12 2 6h6"/></svg>
+        Test connection
+      </button>
+      <button type="submit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        Probe &amp; add
+      </button>
+    </span>
   </div>
 </form>
 <%- else -%>

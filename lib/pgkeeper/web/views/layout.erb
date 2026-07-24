@@ -196,6 +196,13 @@
   button:hover, .btn:hover { filter: brightness(1.07); text-decoration: none; }
   button:active, .btn:active { transform: translateY(1px); }
   button.danger, .btn.danger { background: var(--bad); }
+  /* Secondary button: outlined, for the harmless sibling of a primary action. */
+  button.ghost, .btn.ghost {
+    background: transparent; color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  button.ghost:hover, .btn.ghost:hover { background: var(--accent-weak); filter: none; }
+  .btn-row { display: inline-flex; gap: 0.5rem; flex-wrap: wrap; }
   button svg, .btn svg { width: 1rem; height: 1rem; }
   .run-now { display: inline; margin: 0; }
   .btn-run { padding: 0.3rem 0.75rem; font-size: 0.8rem; border-radius: 6px; }
