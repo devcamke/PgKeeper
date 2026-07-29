@@ -31,7 +31,7 @@ end
 # (adapters lazy-require them); they live here so the test suite can exercise
 # the cloud adapters. Users who want a given backend add the matching gem.
 group :cloud, :test do
-  gem "aws-sdk-s3", "~> 1.150"
+  gem "aws-sdk-s3", "~> 1.228"
   # aws-sdk-core needs an XML parser and no longer finds one in the stdlib on
   # newer Rubies; rexml is the lightweight pure-Ruby choice.
   gem "rexml", "~> 3.3"
