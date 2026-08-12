@@ -8,7 +8,7 @@ group :development, :test do
   gem "minitest", "~> 6.0"
   gem "rack-test", "~> 2.1", require: false
   gem "rake", "~> 13.0"
-  gem "rubocop", "~> 1.60", require: false
+  gem "rubocop", "~> 1.89", require: false
   gem "rubocop-minitest", "~> 0.34", require: false
   gem "rubocop-rake", "~> 0.6", require: false
   # Stubs HTTP so webhook / dead-man's-switch notifier tests need no network.
@@ -31,7 +31,7 @@ end
 # (adapters lazy-require them); they live here so the test suite can exercise
 # the cloud adapters. Users who want a given backend add the matching gem.
 group :cloud, :test do
-  gem "aws-sdk-s3", "~> 1.150"
+  gem "aws-sdk-s3", "~> 1.229"
   # aws-sdk-core needs an XML parser and no longer finds one in the stdlib on
   # newer Rubies; rexml is the lightweight pure-Ruby choice.
   gem "rexml", "~> 3.3"
